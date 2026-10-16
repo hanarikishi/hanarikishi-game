@@ -32,7 +32,7 @@
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     box-shadow: 0 0 30px rgba(60, 40, 0, .3);
   }
-  #hud { display: flex; align-items: stretch; gap: 6px; padding: 8px 10px 6px; }
+  #hud { display: flex; align-items: stretch; gap: 6px; padding: 6px 10px; }
   .stat {
     flex: 1; min-width: 0; background: var(--panel); border: 2px solid var(--ink); border-radius: 12px;
     padding: 3px 8px 4px; display: flex; flex-direction: column; justify-content: center;
@@ -54,7 +54,7 @@
     touch-action: none; cursor: pointer;
   }
   #chain {
-    display: flex; gap: 4px; overflow-x: auto; padding: 6px 10px 8px; touch-action: pan-x;
+    display: flex; gap: 4px; overflow-x: auto; padding: 8px 10px 0; touch-action: pan-x;
     scrollbar-width: none;
   }
   #chain::-webkit-scrollbar { display: none; }
@@ -81,6 +81,7 @@
 </head>
 <body>
 <div id="app">
+  <div id="chain" aria-label="番付"></div>
   <div id="hud">
     <div class="stat"><h2>スコア</h2><div class="num" id="score">0</div></div>
     <div class="stat"><h2>最高位</h2><div class="num sm" id="top">前相撲</div></div>
@@ -97,7 +98,6 @@
       <button id="ovBtn">はじめる</button>
     </div>
   </div>
-  <div id="chain" aria-label="番付"></div>
 </div>
 
 <script src="matter.min.js"></script>
