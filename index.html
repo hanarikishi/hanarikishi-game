@@ -287,6 +287,8 @@
       }
       topLv = Math.max(topLv, lv + 1);
       const n = addSumo(lv + 1, x, y);
+      const newer = a.age <= b.age ? a : b; // 後から落とした（新しい）ほうの向きを引き継ぐ
+      Body.setAngle(n, newer.angle);
       n.age = 1; n.pop = 1; n.winT = 0.9;
       score += SCORE[lv + 1];
       burst(x, y, RANKS[lv + 1].belt, 16 + lv * 3, 3 + lv * 0.4);
