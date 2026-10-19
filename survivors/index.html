@@ -84,11 +84,11 @@
 
   // ---- 敵 ----
   const ENEMY = {
-    ghost: { name: 'おばけ',     hp: 6,   spd: 34, dmg: 6,  r: 8,  gem: 1, art: 1.0 },
-    bat:   { name: 'こうもり',   hp: 3,   spd: 78, dmg: 4,  r: 6,  gem: 1, art: 1.0, wave: true },
-    skel:  { name: 'ガイコツ',   hp: 14,  spd: 46, dmg: 8,  r: 8,  gem: 1, art: 1.0 },
+    ghost: { name: 'おばけ',     hp: 6,   spd: 32, dmg: 4,  r: 8,  gem: 1, art: 1.0 },
+    bat:   { name: 'こうもり',   hp: 3,   spd: 70, dmg: 3,  r: 6,  gem: 1, art: 1.0, wave: true },
+    skel:  { name: 'ガイコツ',   hp: 14,  spd: 42, dmg: 6,  r: 8,  gem: 1, art: 1.0 },
     rival: { name: 'ライバル力士', hp: 70, spd: 32, dmg: 13, r: 12, gem: 5, art: 1.0 },
-    oni:   { name: '鬼',         hp: 650, spd: 44, dmg: 22, r: 17, gem: 25, art: 1.0, boss: true },
+    oni:   { name: '鬼',         hp: 450, spd: 44, dmg: 22, r: 17, gem: 25, art: 1.0, boss: true },
   };
 
   // ================= ドット絵 =================
@@ -363,14 +363,14 @@
   let joy = null, keys = {}, pausedBy = null;
   try { best = JSON.parse(localStorage.getItem('sumo-surv-best') || 'null') || { time: 0, kills: 0 }; } catch { best = { time: 0, kills: 0 }; }
 
-  const xpFor = L => 4 + (L - 1) * 6;
+  const xpFor = L => L === 1 ? 2 : L === 2 ? 5 : 4 + (L - 1) * 6;
 
   function reset() {
     state = 'title'; gt = 0; kills = 0; coins = 0; level = 1; xp = 0; xpNeed = xpFor(1);
-    P = { x: 0, y: 0, hp: 100, maxHp: 100, iframe: 0, face: 1, moving: false, walkT: 0, hurtT: 0, speed: 92 };
+    P = { x: 0, y: 0, hp: 100, maxHp: 100, iframe: 0, face: 1, moving: false, walkT: 0, hurtT: 0, speed: 100 };
     weapons = []; passives = {};
     enemies = []; gems = []; items = []; props = []; projs = []; fx = []; nums = []; swings = []; bolts = [];
-    spawnT = 0.5; nextSwarm = 28; nextBoss = 100; propT = 8; choices = []; banner = null; shake = 0; nid = 1; killStreak = 0; gemStreak = 0; lastGem = 0;
+    spawnT = 0.5; nextSwarm = 70; nextBoss = 150; propT = 8; choices = []; banner = null; shake = 0; nid = 1; killStreak = 0; gemStreak = 0; lastGem = 0;
     camX = 0; camY = 0;
     addWeapon('hari');
     recalc();
@@ -388,7 +388,7 @@
     S.area = 1 + 0.1 * pv('kesho');
     S.cd = Math.max(0.4, 1 - 0.08 * pv('tachiai'));
     S.magnet = 1 + 0.3 * pv('maneki');
-    S.regen = 0.3 * pv('chikara');
+    S.regen = 0.12 + 0.3 * pv('chikara');
     S.armor = pv('mawashi');
     S.speed = 1 + 0.1 * pv('ashi');
   }
@@ -448,8 +448,8 @@
     const m = gt / 60;
     spawnT -= dt;
     if (spawnT <= 0) {
-      spawnT = Math.max(0.12, 0.65 - m * 0.06);
-      const n = 2 + Math.floor(m * 1.1) + (Math.random() < 0.4 ? 1 : 0);
+      spawnT = Math.max(0.12, 1.3 - m * 0.16);
+      const n = 1 + Math.floor(m * 1.1) + (m >= 1.5 && Math.random() < 0.4 ? 1 : 0);
       for (let i = 0; i < n; i++) spawnAtEdge(pickType(m));
     }
     // 壁のような群れ: こうもりの輪・列
@@ -457,11 +457,11 @@
       nextSwarm += 45;
       const ring = Math.random() < 0.5;
       if (ring) {
-        const n = 36 + Math.floor(m * 4);
+        const n = 22 + Math.floor(m * 5);
         const R = Math.hypot(W, H) / 2 + 30;
         for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; spawnEnemy('bat', P.x + Math.cos(a) * R, P.y + Math.sin(a) * R, { swarm: true }); }
       } else {
-        const side = Math.random() < 0.5 ? -1 : 1, n = 30 + Math.floor(m * 3);
+        const side = Math.random() < 0.5 ? -1 : 1, n = 18 + Math.floor(m * 4);
         for (let i = 0; i < n; i++) spawnEnemy('bat', P.x + side * (W / 2 + 30 + (i % 3) * 14), P.y - H / 2 + (i / n) * H * 1.1, { swarm: true });
       }
     }
@@ -731,7 +731,7 @@
   function hurt(dmg) {
     if (P.iframe > 0) return;
     const d = Math.max(1, Math.round(dmg - S.armor));
-    P.hp -= d; P.iframe = 0.5; P.hurtT = 0.2; shake = 0.15;
+    P.hp -= d; P.iframe = 0.75; P.hurtT = 0.2; shake = 0.15;
     sfx.hurt();
     if (P.hp <= 0) { P.hp = 0; endGame(false); }
   }
@@ -820,7 +820,7 @@
     enemies = enemies.filter(e => !e.dead);
 
     // ---- 宝石 ----
-    const pick = 46 * S.magnet;
+    const pick = 58 * S.magnet;
     for (const g of gems) {
       g.t += dt;
       const dx = P.x - g.x, dy = P.y - g.y, d = Math.hypot(dx, dy) || 1;
