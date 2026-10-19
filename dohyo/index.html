@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>はなりきし土俵将棋</title>
+<link rel="icon" href="../parts/icon-192.png">
+<link rel="apple-touch-icon" href="../parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f6e7b8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #e9d79c; display: flex; justify-content: center; align-items: center;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  canvas {
+    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    box-shadow: 0 0 30px rgba(60, 40, 0, .3); touch-action: none; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="840" height="1400"></canvas>
+
+<script>
+(() => {
+  'use strict';
+  const W = 420, H = 700;
+  const BEST_KEY = 'sumo-dohyo-best';   // 最高連勝
+  const RUN_KEY = 'sumo-dohyo-run';     // いまの連勝（続きから遊べるように）
+
+  // 番付（全ゲーム共通）。このゲームでは連勝数がそのまま番付になる
+  const RANKS = [
+    { name: '前相撲', from: 0,   body: '#f1efe8', belt: '#111111' },
+    { name: '序の口', from: 3,   body: '#f7e3bd', belt: '#111111' },
+    { name: '序二段', from: 7,   body: '#bfe4f6', belt: '#111111' },
+    { name: '三段目', from: 12,  body: '#c9eaa5', belt: '#111111' },
+    { name: '幕下',   from: 18,  body: '#f8cfe0', belt: '#111111' },
+    { name: '十両',   from: 26,  body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 36,  body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 48,  body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 62,  body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 78,  body: '#ff9a3c', belt: '#14507a' },
+    { name: '横綱',   from: 100, body: '#ffee00', belt: '#1f5c00' },
+  ];
+  const rankOfStreak = s => Math.min(s, RANKS.length - 1);
+
+  // ---- 画像（はなりきしの絵は ../parts/ に共通で置いてある） ----
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
+  const IMG = {};
+  const CX = 513, CY = 538, BODY_R = 395;         // 絵の中の体の中心と半径
+  const loadImages = () => Promise.all(SRC.map(n => new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => { IMG[n] = i; res(); }; i.onerror = () => rej(new Error('画像を読み込めません: ' + n)); i.src = `../parts/${n}.png`;
+  })));
+  const tint = (img, color) => {
+    const c = document.createElement('canvas'); c.width = c.height = 1024;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, 1024, 1024); return c;
+  };
+  // 色ごとの力士（face: normal / hit / win）。使うときに作ってとっておく
+  const SPR_R = 34, DPR = 2, spriteCache = {};
+  function sprite(body, belt) {
+    const key = body + belt;
+    if (spriteCache[key]) return spriteCache[key];
+    const size = Math.ceil(1024 * SPR_R / BODY_R * DPR);
+    const bodyT = tint(IMG.body_color, body), beltT = tint(IMG.mawashi, belt), faces = {};
+    for (const face of ['normal', 'hit', 'win']) {
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+      const d = im => g.drawImage(im, 0, 0, size, size);
+      d(bodyT); d(beltT); d(IMG.body_line); d(face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win);
+      faces[face] = c;
+    }
+    return (spriteCache[key] = faces);
+  }
+  // 体の中心を (x, y) に、半径 r で描く
+  function drawSumo(g, faces, face, x, y, r, alpha = 1) {
+    const k = r / BODY_R;
+    g.save(); g.globalAlpha = alpha; g.translate(x, y);
+    g.drawImage(faces[face], -CX * k, -CY * k, 1024 * k, 1024 * k);
+    g.restore();
+  }
+
+  // ================= 盤と押し合いのルール =================
+  // 5x5 の四隅を除いた 21 マスが土俵。マスの値: 0=空, ±1=力士, ±2=横綱（+が東=下、-が西=上）
+  const VALID = [], NB = [], DIST = [];
+  const DR = [-1, -1, 0, 1, 1, 1, 0, -1], DC = [0, 1, 1, 1, 0, -1, -1, -1];
+  for (let i = 0; i < 25; i++) { const r = i / 5 | 0, c = i % 5; VALID[i] = !((r === 0 || r === 4) && (c === 0 || c === 4)); }
+  for (let i = 0; i < 25; i++) {
+    NB[i] = [];
+    for (let d = 0; d < 8; d++) {
+      const r = (i / 5 | 0) + DR[d], c = i % 5 + DC[d];
+      NB[i][d] = r < 0 || r > 4 || c < 0 || c > 4 || !VALID[r * 5 + c] ? -1 : r * 5 + c;
+    }
+  }
+  // 土俵際までの近さ（1 = 俵に足がかかっている）
+  for (let i = 0; i < 25; i++) DIST[i] = VALID[i] && NB[i].some(n => n < 0) ? 1 : 0;
+  for (let k = 2; k < 5; k++) for (let i = 0; i < 25; i++)
+    if (VALID[i] && !DIST[i] && NB[i].some(n => n >= 0 && DIST[n] === k - 1)) DIST[i] = k;
+
+  const sgn = v => v > 0 ? 1 : v < 0 ? -1 : 0;
+  // from の駒を d の向きに1マス動かす。前に駒がいれば列ごと押す。できなければ null
+  // 押せる条件: 先頭からつながった味方の力 ≥ その先の駒の力の合計（横綱は2人力）
+  function tryMove(bd, from, d) {
+    const s = sgn(bd[from]), line = [from];
+    let p = NB[from][d];
+    while (p >= 0 && bd[p] !== 0) { line.push(p); p = NB[p][d]; }
+    if (line.length === 1 && p < 0) return null;          // 自分から土俵の外へは出ない
+    let i = 0, power = 0, weight = 0;
+    while (i < line.length && sgn(bd[line[i]]) === s) power += Math.abs(bd[line[i++]]);
+    const pushers = i;
+    for (; i < line.length; i++) weight += Math.abs(bd[line[i]]);
+    if (power < weight) return null;
+    if (weight === 0 && p < 0) return null;                // 味方だけを外へ押し出すのはなし
+    const nb = bd.slice(), outs = [], moves = [];
+    nb[from] = 0;
+    for (let k = 0; k < line.length; k++) {
+      const dest = k < line.length - 1 ? line[k + 1] : p;
+      if (dest >= 0) nb[dest] = bd[line[k]]; else outs.push(bd[line[k]]);
+      moves.push([line[k], dest]);
+    }
+    return { from, d, nb, outs, moves, pushers, pushed: line.length > 1, foe: pushers < line.length };
+  }
+  function genMoves(bd, side) {
+    const ms = [];
+    for (let i = 0; i < 25; i++) if (sgn(bd[i]) === side)
+      for (let d = 0; d < 8; d++) { const m = tryMove(bd, i, d); if (m) ms.push(m); }
+    return ms;
+  }
+  // 動いた側から見た結果: 1=勝ち, -1=負け, 0=続く
+  const outcome = (m, side) => m.outs.includes(2 * side) ? -1 : m.outs.includes(-2 * side) ? 1 : 0;
+  // 手数切れの判定: 残りの人数 → 同じなら、土俵の真ん中を取っているほう（俵から遠い位置の合計、横綱は2倍）
+  function judge(bd) {
+    let n = 0, pos = 0;
+    for (let i = 0; i < 25; i++) if (bd[i]) { n += sgn(bd[i]); pos += bd[i] * DIST[i]; }
+    return { winner: sgn(n) || sgn(pos), byPos: !n && !!pos };
+  }
+
+  // ================= CPU =================
+  function evaluate(bd) {           // 東(+)から見た点数
+    let s = 0;
+    for (let i = 0; i < 25; i++) {
+      const v = bd[i]; if (!v) continue;
+      const sg = sgn(v);
+      if (Math.abs(v) === 1) s += sg * (100 + 6 * DIST[i]);
+      else {
+        s += sg * 22 * DIST[i];
+        for (let d = 0; d < 8; d++) {    // 横綱のまわり: 味方がいれば安心、相手がいれば危ない
+          const n = NB[i][d];
+          if (n < 0) continue;
+          if (sgn(bd[n]) === sg) s += sg * 5; else if (bd[n]) s -= sg * 9;
+        }
+      }
+    }
+    return s;
+  }
+  const WIN = 100000;
+  function negamax(bd, side, depth, alpha, beta, ply) {
+    if (depth === 0) return evaluate(bd) * side;
+    const ms = genMoves(bd, side);
+    if (!ms.length) return evaluate(bd) * side;
+    ms.sort((a, b) => b.outs.length - a.outs.length || b.pushed - a.pushed);
+    let best = -Infinity;
+    for (const m of ms) {
+      const o = outcome(m, side);
+      const v = o ? o * (WIN - ply) : -negamax(m.nb, -side, depth - 1, -beta, -alpha, ply + 1);
+      if (v > best) best = v;
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+  // 連勝数ごとの強さ（読む深さと、わざと入れるゆらぎ）
+  const LEVELS = [
+    { depth: 1, noise: 90 }, { depth: 1, noise: 40 }, { depth: 2, noise: 60 }, { depth: 2, noise: 25 },
+    { depth: 2, noise: 0 }, { depth: 3, noise: 30 }, { depth: 3, noise: 10 }, { depth: 3, noise: 0 },
+    { depth: 4, noise: 15 }, { depth: 4, noise: 0 }, { depth: 5, noise: 0 },
+  ];
+  function cpuMove(bd, side, lv) {
+    const L = LEVELS[Math.min(lv, LEVELS.length - 1)];
+    const ms = genMoves(bd, side);
+    if (!ms.length) return null;
+    let best = null, bestV = -Infinity;
+    for (const m of ms) {
+      const o = outcome(m, side);
+      let v = o ? o * WIN : -negamax(m.nb, -side, L.depth - 1, -Infinity, Infinity, 1);
+      v += Math.random() * (L.noise + 1);
+      if (v > bestV) { bestV = v; best = m; }
+    }
+    return best;
+  }
+
+  // ================= 状態 =================
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+  const load = k => { try { return +localStorage.getItem(k) || 0; } catch { return 0; } };
+  const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  let best = load(BEST_KEY), streak = load(RUN_KEY);
+
+  const BX = 210, BY = 360, CELL = 66, RING = 180;
+  const cellX = i => BX + (i % 5 - 2) * CELL, cellY = i => BY + ((i / 5 | 0) - 2) * CELL;
+  const MAX_PLY = 60;                      // 30手ずつで決着がつかなければ判定
+
+  let scene = 'title', mode = 'cpu', t = 0;
+  let bd, pcs, turn, sel, targets, busy, ply, banner, lastMove, result, thinking, after;
+
+  const START = [
+    [22, 2], [16, 1], [17, 1], [18, 1],   // 東（下）: 横綱と、その前に力士3人
+    [2, -2], [6, -1], [7, -1], [8, -1],    // 西（上）
+  ];
+  function newGame() {
+    bd = new Array(25).fill(0);
+    pcs = START.map(([c, v], id) => { bd[c] = v; return { id, v, cell: c, x: cellX(c), y: cellY(c), out: false, ot: 0, vx: 0, vy: 0, hit: 0 }; });
+    turn = 1; sel = -1; targets = []; busy = 0; ply = 0; banner = null; lastMove = null; result = null; thinking = false; after = null;
+    scene = 'play';
+  }
+  const human = () => mode === 'pvp' || turn === 1;
+  const sideName = s => mode === 'cpu' ? (s === 1 ? 'あなた' : 'CPU') : (s === 1 ? '東' : '西');
+
+  function kimarite(m, side) {
+    if (m.outs.includes(2 * side)) return '勇み足';
+    if (m.pushers >= 2) return '寄り切り';
+    return m.d % 2 ? '突き出し' : '押し出し';
+  }
+
+  function play(m) {
+    const side = sgn(bd[m.from]);
+    const name = m.outs.length ? kimarite(m, side) : null;
+    const byCell = {};
+    pcs.forEach(p => { if (!p.out) byCell[p.cell] = p; });
+    for (const [a, b] of m.moves) {
+      const p = byCell[a];
+      if (b >= 0) p.cell = b;
+      else { p.out = true; p.ot = 0; p.vx = DC[m.d] * 260; p.vy = DR[m.d] * 260; }
+      if (sgn(p.v) !== side) p.hit = 0.7;
+    }
+    bd = m.nb; ply++; sel = -1; targets = [];
+    lastMove = { from: m.from, to: NB[m.from][m.d] };
+    busy = m.pushed ? 0.38 : 0.22;
+    if (name) banner = { text: name + '！', t: 0 };
+    const o = outcome(m, side);
+    after = () => {
+      if (o) return finish(o * side, name);
+      if (ply >= MAX_PLY) {
+        const j = judge(bd);
+        return finish(j.winner, j.byPos ? '判定（位置）' : '判定');
+      }
+      turn = -turn;
+      if (!genMoves(bd, turn).length) turn = -turn;   // 動けなければ手番を飛ばす
+      if (!human()) cpuThink();
+    };
+  }
+
+  function cpuThink() {
+    thinking = true;
+    setTimeout(() => {
+      const m = cpuMove(bd, -1, streak);
+      thinking = false;
+      if (m) play(m); else { turn = 1; }
+    }, 450);
+  }
+
+  function finish(winner, how) {
+    const r = { winner, how, from: streak, to: streak };
+    if (mode === 'cpu') {
+      if (winner === 1) { streak++; if (streak > best) { best = streak; save(BEST_KEY, best); } }
+      else if (winner === -1) streak = 0;
+      save(RUN_KEY, streak);
+      r.to = streak;
+    }
+    result = r; result.t = 0;
+    scene = 'result';
+  }
+
+  // ================= 入力 =================
+  let buttons = [];
+  function hitCell(x, y) {
+    for (let i = 0; i < 25; i++) if (VALID[i] && Math.abs(x - cellX(i)) < CELL / 2 && Math.abs(y - cellY(i)) < CELL / 2) return i;
+    return -1;
+  }
+  function tap(x, y) {
+    const b = buttons.find(b => x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h);
+    if (b) return b.fn();
+    if (scene === 'rules') { scene = 'title'; return; }
+    if (scene === 'result') { if (result.t > 0.8) primary(); return; }
+    if (scene !== 'play' || busy > 0 || after || thinking || !human()) return;
+    const c = hitCell(x, y);
+    const tg = targets.find(tg => tg.cell === c);
+    if (sel >= 0 && tg) return play(tg.m);
+    if (c >= 0 && sgn(bd[c]) === turn) {
+      sel = c;
+      targets = [];
+      for (let d = 0; d < 8; d++) { const m = tryMove(bd, c, d); if (m) targets.push({ cell: NB[c][d], m }); }
+    } else { sel = -1; targets = []; }
+  }
+  function primary() {
+    if (mode === 'cpu' && result.winner === -1) scene = 'title'; else newGame();
+  }
+  function pos(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; }
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); tap(...pos(e)); });
+
+  // ================= 更新 =================
+  function update(dt) {
+    t += dt;
+    if (scene === 'result') result.t += dt;
+    if (!pcs) return;
+    for (const p of pcs) {
+      if (p.out) { p.ot += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; }
+      else { const k = Math.min(1, dt * 14); p.x += (cellX(p.cell) - p.x) * k; p.y += (cellY(p.cell) - p.y) * k; }
+      p.hit = Math.max(0, p.hit - dt);
+    }
+    if (banner) { banner.t += dt; if (banner.t > 1.3) banner = null; }
+    if (busy > 0) { busy -= dt; if (busy <= 0 && after) { const f = after; after = null; f(); } }
+  }
+
+  // ================= 描画 =================
+  function text(g, s, x, y, size, color = '#3a2a10', stroke = '#fff8dc', align = 'center') {
+    g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`; g.textAlign = align; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = size / 5; g.strokeStyle = stroke; g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
+  }
+  function rrect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+  function button(g, label, sub, x, y, w, h, color, fn) {
+    rrect(g, x, y + 4, w, h, 16); g.fillStyle = 'rgba(58,42,16,.35)'; g.fill();
+    rrect(g, x, y, w, h, 16); g.fillStyle = color; g.fill();
+    g.lineWidth = 3; g.strokeStyle = '#3a2a10'; g.stroke();
+    if (sub) { text(g, label, x + w / 2, y + h / 2 - 9, 22, '#3a2a10', 'rgba(0,0,0,0)'); text(g, sub, x + w / 2, y + h / 2 + 15, 13, '#6b5530', 'rgba(0,0,0,0)'); }
+    else text(g, label, x + w / 2, y + h / 2, 22, '#3a2a10', 'rgba(0,0,0,0)');
+    buttons.push({ x, y, w, h, fn });
+  }
+
+  const SIDE_COLOR = { 1: '#d8473a', '-1': '#3a6fd8' };
+  function pieceFaces(v) {
+    if (Math.abs(v) === 2) return sprite('#ffee00', v > 0 ? '#b71c1c' : '#14507a');
+    if (v > 0) { const rk = RANKS[mode === 'cpu' ? Math.min(rankOfStreak(streak), RANKS.length - 2) : 4]; return sprite(rk.body, rk.belt); }
+    return sprite('#cfd8dc', '#14507a');
+  }
+
+  function drawDohyo(g) {
+    // 盛り土
+    rrect(g, BX - RING - 14, BY - RING - 14, (RING + 14) * 2, (RING + 14) * 2, 26);
+    g.fillStyle = '#c99d5c'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#8a6630'; g.stroke();
+    // 土俵の中
+    g.beginPath(); g.arc(BX, BY, RING, 0, Math.PI * 2); g.fillStyle = '#ecd3a0'; g.fill();
+    // 俵
+    g.lineWidth = 12; g.strokeStyle = '#b48a48'; g.stroke();
+    g.setLineDash([22, 5]); g.lineWidth = 8; g.strokeStyle = '#d8b878'; g.stroke(); g.setLineDash([]);
+    // マス
+    for (let i = 0; i < 25; i++) if (VALID[i]) {
+      rrect(g, cellX(i) - CELL / 2 + 3, cellY(i) - CELL / 2 + 3, CELL - 6, CELL - 6, 10);
+      g.fillStyle = DIST[i] === 1 ? 'rgba(170,120,60,.13)' : 'rgba(255,250,235,.35)'; g.fill();
+    }
+    // 仕切り線
+    g.fillStyle = 'rgba(255,255,255,.85)';
+    g.fillRect(BX - 22, BY - 16, 44, 4); g.fillRect(BX - 22, BY + 12, 44, 4);
+  }
+
+  function drawPieces(g) {
+    const list = pcs.filter(p => !p.out || p.ot < 0.9).sort((a, b) => a.y - b.y);
+    for (const p of list) {
+      const yoko = Math.abs(p.v) === 2, side = sgn(p.v);
+      const r = yoko ? 25 : 21;
+      let a = 1, sc = 1;
+      if (p.out) { sc = Math.max(0.4, 1 - p.ot * 0.6); a = Math.max(0, 1 - p.ot / 0.9); }
+      g.save(); g.globalAlpha = a;
+      // 足元の丸（東=赤、西=青）
+      g.beginPath(); g.ellipse(p.x, p.y + r * 0.75 * sc, r * 1.1 * sc, r * 0.42 * sc, 0, 0, Math.PI * 2);
+      g.fillStyle = SIDE_COLOR[side]; g.globalAlpha = a * 0.75; g.fill(); g.globalAlpha = a;
+      if (p.cell === sel && !p.out) {
+        g.beginPath(); g.arc(p.x, p.y, r + 9, 0, Math.PI * 2); g.lineWidth = 4; g.strokeStyle = '#ffcf00'; g.stroke();
+      }
+      g.restore();
+      let face = p.hit > 0 || p.out ? 'hit' : 'normal';
+      if (scene === 'result' && result.winner === side) face = 'win';
+      drawSumo(g, pieceFaces(p.v), face, p.x, p.y, r * sc, a);
+      if (yoko) {   // 横綱のしるし
+        g.save(); g.globalAlpha = a;
+        g.beginPath(); g.arc(p.x + r * 0.85, p.y + r * 0.55, 10, 0, Math.PI * 2);
+        g.fillStyle = '#ffd400'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#3a2a10'; g.stroke();
+        text(g, '綱', p.x + r * 0.85, p.y + r * 0.56, 12, '#3a2a10', 'rgba(0,0,0,0)');
+        g.restore();
+      }
+    }
+  }
+
+  function drawTargets(g, foe) {
+    for (const tg of targets) {
+      if (tg.m.foe !== foe) continue;
+      const x = cellX(tg.cell), y = cellY(tg.cell);
+      if (!tg.m.foe) {
+        g.beginPath(); g.arc(x, y, 12, 0, Math.PI * 2); g.fillStyle = 'rgba(60,170,80,.75)'; g.fill();
+      } else {
+        const out = tg.m.outs.length > 0;
+        g.save(); g.translate(x, y); g.rotate(Math.atan2(DR[tg.m.d], DC[tg.m.d]));
+        g.beginPath(); g.moveTo(-14, -12); g.lineTo(12, 0); g.lineTo(-14, 12); g.closePath();
+        g.fillStyle = out ? 'rgba(230,40,30,.9)' : 'rgba(255,140,0,.9)'; g.fill();
+        g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
+        g.restore();
+        text(g, out ? '出す' : '押す', x, y + 27, 13, '#fff', out ? '#c62818' : '#b35c00');
+      }
+    }
+  }
+
+  function topBar(g, left, right) {
+    g.fillStyle = 'rgba(255,248,220,.96)'; g.fillRect(0, 0, W, 58);
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 58); g.lineTo(W, 58); g.stroke();
+    text(g, left, 16, 30, 20, '#3a2a10', 'rgba(0,0,0,0)', 'left');
+    if (right) text(g, right, W - 100, 30, 18, '#3a2a10', 'rgba(0,0,0,0)', 'right');
+  }
+
+  function drawPlay(g) {
+    const rk = RANKS[rankOfStreak(streak)];
+    topBar(g, mode === 'cpu' ? `${rk.name}  ${streak}連勝` : 'ふたりで対戦', `残り${Math.ceil((MAX_PLY - ply) / 2)}手`);
+    if (scene === 'play') button(g, 'やめる', '', W - 88, 12, 76, 36, '#fff', () => { scene = 'title'; });
+    // 手番
+    const msg = scene !== 'play' ? '' : thinking ? 'CPUが考え中…' : busy > 0 ? '' :
+      mode === 'cpu' ? (turn === 1 ? 'あなたの番（赤）' : '') : (turn === 1 ? '東（赤）の番' : '西（青）の番');
+    text(g, mode === 'cpu' ? '西  CPU' : '西', BX, 82, 16, '#3a6fd8');
+    if (msg) text(g, msg, BX, 618, 22, turn === 1 ? '#c62818' : '#2350b0');
+    text(g, mode === 'cpu' ? '東  あなた' : '東', BX, BY + RING + 24, 16, '#d8473a');
+    drawDohyo(g);
+    if (lastMove) {
+      for (const c of [lastMove.from, lastMove.to]) if (c >= 0) {
+        rrect(g, cellX(c) - CELL / 2 + 3, cellY(c) - CELL / 2 + 3, CELL - 6, CELL - 6, 10);
+        g.fillStyle = 'rgba(255,220,80,.28)'; g.fill();
+      }
+    }
+    drawTargets(g, false);
+    drawPieces(g);
+    drawTargets(g, true);
+    if (scene === 'play' && sel < 0 && human() && !busy && ply < 2) text(g, '動かす力士をタップ', BX, 652, 16, '#6b5530');
+    if (banner) {
+      const k = Math.min(1, banner.t * 6), s = 1 + (1 - k) * 0.8, a = Math.min(1, (1.3 - banner.t) * 4);
+      g.save(); g.globalAlpha = a; g.translate(BX, BY); g.scale(s, s);
+      text(g, banner.text, 0, 0, 44, '#fff', '#b71c1c');
+      g.restore();
+    }
+  }
+
+  function drawResult(g) {
+    if (result.t < 0.9) return;
+    const r = result, a = Math.min(1, (r.t - 0.9) * 4);
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = 'rgba(58,42,16,.55)'; g.fillRect(0, 0, W, H);
+    rrect(g, 30, 150, W - 60, 430, 22); g.fillStyle = '#fff8dc'; g.fill(); g.lineWidth = 4; g.strokeStyle = '#3a2a10'; g.stroke();
+    let title, lines = [], btn;
+    if (mode === 'cpu') {
+      if (r.winner === 1) {
+        title = '勝ち！';
+        lines.push(r.how.startsWith('判定') ? r.how.replace('判定', '判定勝ち') : `決まり手：${r.how}`);
+        if (rankOfStreak(r.to) > rankOfStreak(r.from)) lines.push(`${RANKS[rankOfStreak(r.from)].name} → ${RANKS[rankOfStreak(r.to)].name} に昇進！`);
+        if (r.to === RANKS.length - 1) lines.push('横綱昇進、おめでとう！');
+        lines.push(`${r.to}連勝（最高 ${best}）`);
+        btn = '次の取組へ';
+      } else if (r.winner === -1) {
+        title = '負け…';
+        lines.push(r.how.startsWith('判定') ? r.how.replace('判定', '判定負け') : `決まり手：${r.how}`);
+        lines.push(`${r.from}連勝で止まった`, `最高 ${best}連勝`, '番付は前相撲から出直し');
+        btn = 'タイトルへ';
+      } else { title = '引き分け'; lines.push('五分の内容。取り直し！', `${r.to}連勝のまま`); btn = '取り直し'; }
+    } else {
+      title = r.winner ? `${r.winner === 1 ? '東（赤）' : '西（青）'}の勝ち！` : '引き分け';
+      lines.push(r.how.startsWith('判定') ? r.how : `決まり手：${r.how}`);
+      btn = 'もう一番';
+    }
+    g.drawImage(IMG.home, W / 2 - 60, 165, 120, 120);
+    text(g, title, W / 2, 315, 40, r.winner === -1 && mode === 'cpu' ? '#2350b0' : '#c62818');
+    lines.forEach((s, i) => text(g, s, W / 2, 365 + i * 30, 18));
+    g.restore();
+    if (a >= 1) {
+      button(g, btn, '', 70, 485, W - 140, 52, '#9dffb0', primary);
+      if (btn !== 'タイトルへ') button(g, 'タイトルへ', '', 130, 600, W - 260, 44, '#fff', () => { scene = 'title'; });
+    }
+  }
+
+  function drawTitle(g) {
+    g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
+    // 吊り屋根の房（四隅）
+    [['#2e7d32', 40], ['#c62828', W - 40]].forEach(([c, x]) => { g.fillStyle = c; g.beginPath(); g.arc(x, 40, 16, 0, Math.PI * 2); g.fill(); });
+    text(g, 'はなりきし', W / 2, 92, 30, '#6b5530');
+    text(g, '土俵将棋', W / 2, 142, 52, '#b71c1c', '#fff8dc');
+    // 土俵と、向かい合う2人
+    g.beginPath(); g.ellipse(W / 2, 290, 170, 60, 0, 0, Math.PI * 2); g.fillStyle = '#ecd3a0'; g.fill();
+    g.lineWidth = 9; g.strokeStyle = '#b48a48'; g.stroke();
+    const bob = Math.sin(t * 3) * 4;
+    drawSumo(g, sprite('#cfd8dc', '#14507a'), 'normal', W / 2 - 62 + Math.max(0, Math.sin(t * 2)) * 10, 262 + bob, 40);
+    drawSumo(g, pieceFaces(2), 'normal', W / 2 + 62 - Math.max(0, Math.sin(t * 2)) * 10, 262 - bob, 40);
+    const rk = RANKS[rankOfStreak(streak)];
+    button(g, '番付挑戦（CPU）', `いま ${rk.name}・${streak}連勝 ／ 最高 ${best}連勝`, 60, 380, W - 120, 68, '#ffe08a', () => { mode = 'cpu'; newGame(); });
+    button(g, 'ふたりで対戦', '1台を交代で', 60, 470, W - 120, 68, '#fff', () => { mode = 'pvp'; newGame(); });
+    button(g, 'あそびかた', '', 60, 560, W - 120, 52, '#fff', () => { scene = 'rules'; });
+    text(g, '勝つたびに番付が上がり、相手も強くなる', W / 2, 650, 14, '#6b5530');
+  }
+
+  function drawRules(g) {
+    g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
+    text(g, 'あそびかた', W / 2, 50, 30, '#b71c1c');
+    const L = [
+      ['勝ち方', '相手の横綱（綱マーク）を'],
+      ['', '土俵の外へ押し出したら勝ち！'],
+      ['動かし方', '自分の番に力士を1人えらび、'],
+      ['', 'まわり8方向に1マス動かす。'],
+      ['押す', '相手がいるマスへ動くと、'],
+      ['', 'うしろの列ごと1マス押す。'],
+      ['押す力', 'つながった味方の人数が、'],
+      ['', '押される側の人数以上なら押せる。'],
+      ['', '横綱は2人分の力（重い）。'],
+      ['注意', '自分の横綱が押し出されたら負け。'],
+      ['', '30手ずつで決着しなければ'],
+      ['', '残りの人数が多いほうの勝ち。'],
+    ];
+    L.forEach(([h, s], i) => {
+      if (h) text(g, h, 30, 108 + i * 34, 16, '#b71c1c', 'rgba(0,0,0,0)', 'left');
+      text(g, s, 120, 108 + i * 34, 16, '#3a2a10', 'rgba(0,0,0,0)', 'left');
+    });
+    text(g, '緑の点＝動ける  橙の矢印＝押す  赤の矢印＝押し出せる', W / 2, 530, 13, '#6b5530');
+    text(g, 'タップでもどる', W / 2, 620, 20, '#2e7d32');
+  }
+
+  function draw() {
+    const g = ctx;
+    buttons = [];
+    if (scene === 'title') return drawTitle(g);
+    if (scene === 'rules') return drawRules(g);
+    g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
+    drawPlay(g);
+    if (scene === 'result') drawResult(g);
+  }
+
+  let last = 0;
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
+    update(dt); draw(); requestAnimationFrame(frame);
+  }
+
+  loadImages().then(() => { requestAnimationFrame(frame); })
+    .catch(err => { document.body.textContent = err.message; });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>

@@ -1,5 +1,15 @@
 [
   {
+    "id": "dohyo",
+    "title": "はなりきし土俵将棋",
+    "desc": "押して押して、相手の横綱を土俵の外へ",
+    "path": "dohyo/",
+    "thumb": "thumbs/dohyo.jpg",
+    "tags": ["ボード", "対戦"],
+    "added": "2026-10-20",
+    "best": { "key": "sumo-dohyo-best", "type": "number", "unit": "連勝" }
+  },
+  {
     "id": "survivors",
     "title": "はなりきしサバイバーズ",
     "desc": "自動攻撃で敵の大群を生き残れ。10分で横綱",
