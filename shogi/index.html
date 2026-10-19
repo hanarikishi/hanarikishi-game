@@ -291,9 +291,9 @@
   const DEFAULT_SETUP = [[37, K], [38, G], [36, S], [39, B], [35, R], [30, P], [31, P], [32, P], [33, P], [34, P]];   // 1人10枚（歩は5枚）
   const shuffled = a => a.slice().sort(() => Math.random() - 0.5);
   function randomCpuSetup() {
-    // CPU の陣形: 玉は一番奥、歩は前の2段のどこか、ほかは上3段の残り
+    // CPU の陣形: 玉は一番奥、歩は前の2段に1列1枚ずつ、ほかは上3段の残り
     const k = Math.floor(Math.random() * 5);
-    const pawns = shuffled([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]).slice(0, 5);
+    const pawns = [0, 1, 2, 3, 4].map(c => (Math.random() < 0.5 ? 5 : 10) + c);   // 二歩にならないよう列ごとに1枚
     const rest = shuffled([...Array(15).keys()].filter(c => c !== k && !pawns.includes(c)));
     return [[k, K], [rest[0], R], [rest[1], B], [rest[2], G], [rest[3], S], ...pawns.map(c => [c, P])];
   }
@@ -308,9 +308,16 @@
     result = null; thinking = false; after = null; turn = 1; ghosts = [];
     scene = 'setup';
   }
+  // 同じ列に自分の（成っていない）歩が2枚ないか
+  const noNifu = side => {
+    const cols = pcs.filter(p => p.side === side && p.c === P).map(p => p.cell % 5);
+    return new Set(cols).size === cols.length;
+  };
   function shuffleSetup() {
-    const cells = shuffled(MY_CAMP);
-    pcs.filter(p => p.side === 1).forEach((p, i) => { p.cell = cells[i]; });
+    do {
+      const cells = shuffled(MY_CAMP);
+      pcs.filter(p => p.side === 1).forEach((p, i) => { p.cell = cells[i]; });
+    } while (!noNifu(1));
     sel = null;
   }
   function startGame() { scene = 'play'; sel = null; banner = { text: 'よろしくお願いします', t: 0 }; }
@@ -405,9 +412,13 @@
       if (c < 25) { sel = null; return; }
       const p = pieceAt(c);
       if (sel) {
-        const sp = pieceAt(sel.cell);
-        if (p && p !== sp) p.cell = sp.cell;
+        const sp = pieceAt(sel.cell), from = sp.cell;
+        if (p && p !== sp) p.cell = from;
         sp.cell = c; sel = null;
+        if (!noNifu(1)) {      // 二歩になる置き方は元にもどす
+          sp.cell = from; if (p && p !== sp) p.cell = c;
+          banner = { text: '二歩になるので置けません', t: 0 };
+        }
       } else if (p && p.side === 1) sel = { cell: c };
       return;
     }
@@ -569,7 +580,8 @@
     if (scene !== 'setup') drawHands(g);
     if (scene === 'setup') {
       text(g, '下の3段で陣形を組もう', BX, 80, 19, '#b71c1c');
-      text(g, '駒をタップ → 置きたいマスをタップ（入れ替えもOK）', BX, 612, 13, '#6b5530');
+      if (banner) text(g, banner.text, BX, 612, 15, '#c62818');
+      else text(g, '駒をタップ → 置きたいマスをタップ（入れ替えもOK）', BX, 612, 13, '#6b5530');
       button(g, 'おまかせ', '', 30, 636, 140, 48, '#fff', shuffleSetup);
       button(g, 'この陣形で始める', '', 186, 636, 204, 48, '#9dffb0', startGame, 19);
       return;
@@ -649,7 +661,7 @@
     const L = [
       ['盤と駒', '横5×縦8の盤。駒は 玉・飛・角・金・銀'],
       ['', 'と歩5枚の10枚ずつ。動きは将棋と同じ。'],
-      ['陣形', '始める前に、下の3段へ自由に並べる。'],
+      ['陣形', '始める前に、下の3段へ並べる（二歩はだめ）。'],
       ['見えない', '相手の駒はみんな同じはなりきし。'],
       ['', '何の駒かは、動きを見て推理しよう。'],
       ['ポチ', '自分の駒のまわりのポチ＝1マス動ける向き、'],
