@@ -1,0 +1,52 @@
+[
+  {
+    "id": "survivors",
+    "title": "はなりきしサバイバーズ",
+    "desc": "自動攻撃で敵の大群を生き残れ。10分で横綱",
+    "path": "survivors/",
+    "thumb": "thumbs/survivors.jpg",
+    "tags": ["サバイバル", "アクション"],
+    "added": "2026-10-19",
+    "best": { "key": "sumo-surv-best", "type": "time", "label": "最長" }
+  },
+  {
+    "id": "stack",
+    "title": "はなりきしスタック",
+    "desc": "力士を乗せたブロックをぴったり積み上げる",
+    "path": "stack/",
+    "thumb": "thumbs/stack.jpg",
+    "tags": ["積み上げ", "アクション"],
+    "added": "2026-10-19",
+    "best": { "key": "sumo-stack-best", "type": "number", "unit": "段" }
+  },
+  {
+    "id": "crossy",
+    "title": "はなりきしクロッシー",
+    "desc": "車・川・電車をわたって前へ。ワシに注意",
+    "path": "crossy/",
+    "thumb": "thumbs/crossy.jpg",
+    "tags": ["アクション"],
+    "added": "2026-10-19",
+    "best": { "key": "sumo-crossy-best", "type": "number", "unit": "歩" }
+  },
+  {
+    "id": "flappy",
+    "title": "はなりきしフラッピー",
+    "desc": "両手の軍配で羽ばたき、米俵をよける",
+    "path": "flappy/",
+    "thumb": "thumbs/flappy.jpg",
+    "tags": ["アクション"],
+    "added": "2026-10-18",
+    "best": { "key": "sumo-flappy-best", "type": "number", "unit": "点" }
+  },
+  {
+    "id": "suika",
+    "title": "はなりきし出世",
+    "desc": "同じ力士をぶつけて合体、横綱を目指すパズル",
+    "path": "suika/",
+    "thumb": "thumbs/suika.jpg",
+    "tags": ["パズル"],
+    "added": "2026-10-16",
+    "best": { "key": "sumo-suika-best", "type": "number", "unit": "点" }
+  }
+]

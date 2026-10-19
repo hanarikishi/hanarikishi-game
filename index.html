@@ -4,49 +4,138 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>はなりきしゲームズ</title>
+<meta name="description" content="はなりきしのミニゲーム集。ブラウザですぐ遊べます。">
 <link rel="icon" href="parts/icon-192.png">
+<link rel="apple-touch-icon" href="parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f6e7b8">
 <style>
-  * { box-sizing: border-box; }
+  :root {
+    --bg: #f6e7b8; --ink: #3a2a10; --panel: #fff8dc; --accent: #1f5c00; --line: #3a2a10; --soft: rgba(58, 42, 16, .62);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
-    margin: 0; min-height: 100dvh; background: #f6e7b8; color: #3a2a10;
+    margin: 0; min-height: 100dvh; background: var(--bg); color: var(--ink);
     font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    background-image: radial-gradient(rgba(58, 42, 16, .06) 1px, transparent 1px); background-size: 14px 14px;
   }
-  main { max-width: 520px; margin: 0 auto; padding: 24px 16px; }
-  h1 { text-align: center; font-size: 26px; margin: 8px 0 24px; }
+  header { text-align: center; padding: 28px 16px 8px; }
+  header img { width: 96px; height: 96px; display: block; margin: 0 auto 4px; filter: drop-shadow(0 4px 0 rgba(58, 42, 16, .18)); }
+  h1 { margin: 0; font-size: 28px; letter-spacing: .04em; }
+  .sub { margin: 6px 0 0; font-size: 13px; color: var(--soft); }
+  main { max-width: 980px; margin: 0 auto; padding: 8px 14px 40px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px 0 18px; }
+  .chip {
+    appearance: none; border: 2px solid var(--line); background: var(--panel); color: var(--ink);
+    font: inherit; font-size: 13px; font-weight: bold; padding: 5px 14px; border-radius: 999px; cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
   a.card {
-    display: flex; align-items: center; gap: 14px; padding: 12px 14px; margin-bottom: 14px;
-    background: #fff8dc; border: 2px solid #3a2a10; border-radius: 14px;
-    color: inherit; text-decoration: none;
+    display: flex; flex-direction: column; background: var(--panel); border: 2px solid var(--line); border-radius: 16px;
+    overflow: hidden; color: inherit; text-decoration: none; box-shadow: 0 4px 0 rgba(58, 42, 16, .22);
+    transition: transform .12s, box-shadow .12s;
   }
-  a.card:active { transform: scale(.98); }
-  a.card img { width: 64px; height: 64px; border-radius: 12px; }
-  .t { font-size: 18px; font-weight: bold; }
-  .d { font-size: 13px; opacity: .75; margin-top: 2px; }
+  a.card:hover { transform: translateY(-3px); box-shadow: 0 7px 0 rgba(58, 42, 16, .22); }
+  a.card:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(58, 42, 16, .22); }
+  .thumb { position: relative; aspect-ratio: 3 / 4; background: #e9d79c; overflow: hidden; border-bottom: 2px solid var(--line); }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+  .badge {
+    position: absolute; top: 8px; left: 8px; background: #d32f2f; color: #fff; font-size: 11px; font-weight: bold;
+    padding: 2px 8px; border-radius: 999px; border: 2px solid #fff; letter-spacing: .06em;
+  }
+  .best {
+    position: absolute; right: 6px; bottom: 6px; background: rgba(20, 14, 4, .78); color: #ffe27a;
+    font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 8px;
+  }
+  .info { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .t { font-size: 15px; font-weight: bold; line-height: 1.3; }
+  .d { font-size: 12px; color: var(--soft); line-height: 1.45; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; }
+  .tag { font-size: 10px; font-weight: bold; padding: 1px 7px; border-radius: 6px; background: rgba(58, 42, 16, .1); }
+  .empty, .count { text-align: center; color: var(--soft); font-size: 13px; }
+  .count { margin-top: 26px; }
+  footer { text-align: center; padding: 0 16px 28px; font-size: 12px; color: var(--soft); }
+  @media (min-width: 640px) { header img { width: 120px; height: 120px; } h1 { font-size: 34px; } .grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 18px; } }
 </style>
 </head>
 <body>
-<main>
+<header>
+  <img src="parts/home.png" alt="はなりきし">
   <h1>はなりきしゲームズ</h1>
-  <a class="card" href="suika/">
-    <img src="parts/icon-192.png" alt="">
-    <div><div class="t">はなりきし出世</div><div class="d">同じ力士をぶつけて横綱を目指すパズル</div></div>
-  </a>
-  <a class="card" href="flappy/">
-    <img src="parts/icon-192.png" alt="">
-    <div><div class="t">はなりきしフラッピー</div><div class="d">米俵をよけて番付を上げるアクション</div></div>
-  </a>
-  <a class="card" href="crossy/">
-    <img src="parts/icon-192.png" alt="">
-    <div><div class="t">はなりきしクロッシー</div><div class="d">斜め俯瞰の立体で、車・川・電車をわたるアクション</div></div>
-  </a>
-  <a class="card" href="stack/">
-    <img src="parts/icon-192.png" alt="">
-    <div><div class="t">はなりきしスタック</div><div class="d">力士を乗せたブロックをぴったり積み上げる</div></div>
-  </a>
-  <a class="card" href="survivors/">
-    <img src="parts/icon-192.png" alt="">
-    <div><div class="t">はなりきしサバイバーズ</div><div class="d">自動攻撃で敵の大群を生き残る・10分で横綱</div></div>
-  </a>
+  <p class="sub">ブラウザですぐ遊べる、はなりきしのミニゲーム集</p>
+</header>
+<main>
+  <div class="chips" id="chips" role="group" aria-label="ジャンルで絞り込む"></div>
+  <div class="grid" id="grid"></div>
+  <p class="empty" id="empty" hidden>ゲームが見つかりませんでした</p>
+  <p class="count" id="count"></p>
 </main>
+<footer>© はなりきし ・ スマホは「ホーム画面に追加」でアプリのように遊べます</footer>
+
+<script>
+(() => {
+  'use strict';
+  const NEW_DAYS = 21;
+  let games = [], filter = '全部';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // ゲームごとに保存されているベスト記録を読む（同じサイトなので localStorage を共有している）
+  function bestText(g) {
+    if (!g.best) return '';
+    try {
+      const raw = localStorage.getItem(g.best.key);
+      if (!raw) return '';
+      if (g.best.type === 'time') {
+        const t = Math.floor(JSON.parse(raw).time || 0);
+        return t > 0 ? `${g.best.label || 'ベスト'} ${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}` : '';
+      }
+      const v = +raw;
+      return v > 0 ? `${g.best.label || 'ベスト'} ${v}${g.best.unit || ''}` : '';
+    } catch { return ''; }
+  }
+
+  const isNew = g => g.added && (Date.now() - new Date(g.added).getTime()) / 86400000 <= NEW_DAYS;
+
+  function render() {
+    const list = games.filter(g => filter === '全部' || (g.tags || []).includes(filter));
+    $('grid').innerHTML = list.map(g => {
+      const b = bestText(g);
+      return `<a class="card" href="${esc(g.path)}">
+        <div class="thumb">
+          <img src="${esc(g.thumb)}" alt="" loading="lazy">
+          ${isNew(g) ? '<span class="badge">NEW</span>' : ''}
+          ${b ? `<span class="best">${esc(b)}</span>` : ''}
+        </div>
+        <div class="info">
+          <div class="t">${esc(g.title)}</div>
+          <div class="d">${esc(g.desc)}</div>
+          <div class="tags">${(g.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+        </div>
+      </a>`;
+    }).join('');
+    $('empty').hidden = list.length > 0;
+    $('count').textContent = `全 ${games.length} ゲーム`;
+  }
+
+  function renderChips() {
+    const tags = ['全部', ...new Set(games.flatMap(g => g.tags || []))];
+    $('chips').innerHTML = tags.map(t => `<button class="chip" aria-pressed="${t === filter}" data-tag="${esc(t)}">${esc(t)}</button>`).join('');
+    $('chips').onclick = e => {
+      const b = e.target.closest('.chip'); if (!b) return;
+      filter = b.dataset.tag; renderChips(); render();
+    };
+  }
+
+  fetch('games.json', { cache: 'no-cache' }).then(r => r.json()).then(list => {
+    games = list.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));   // 新しい順
+    renderChips(); render();
+  }).catch(() => { $('empty').hidden = false; $('empty').textContent = 'ゲーム一覧を読み込めませんでした'; });
+
+  // 戻ってきたとき、ベスト記録を最新にする
+  window.addEventListener('pageshow', () => games.length && render());
+})();
+</script>
 </body>
 </html>

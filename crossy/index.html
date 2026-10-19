@@ -200,10 +200,10 @@
     lane.dir = lastDir = -lastDir;
     if (type === 'road') {
       lane.speed = rnd(1.6, 2.8) + diff * 2.2;
-      const n = Math.min(6, 4 + Math.floor(Math.random() * (2 + diff * 2)));
+      const n = Math.min(5, 3 + Math.floor(Math.random() * (1 + diff * 2.5)));
       const slot = PERIOD / n;
       for (let i = 0; i < n; i++) {
-        const truck = n <= 5 && Math.random() < 0.3;
+        const truck = n <= 4 && Math.random() < 0.3;
         lane.objs.push({
           x: WRAP_L + i * slot + rnd(-slot * 0.1, slot * 0.1),
           w: truck ? 2.7 : 1.6, kind: truck ? 'truck' : 'car',

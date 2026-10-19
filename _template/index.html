@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>ゲーム名</title><!-- TODO: ゲーム名 -->
+<link rel="icon" href="../parts/icon-192.png">
+<link rel="apple-touch-icon" href="../parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f6e7b8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #e9d79c; display: flex; justify-content: center; align-items: center;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  canvas {
+    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    box-shadow: 0 0 30px rgba(60, 40, 0, .3); touch-action: none; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="840" height="1400"></canvas>
+
+<script>
+(() => {
+  'use strict';
+  const W = 420, H = 700;
+  const BEST_KEY = 'sumo-template-best';   // TODO: sumo-<ゲームid>-best
+
+  // 番付（全ゲーム共通）。from は番付が上がる得点
+  const RANKS = [
+    { name: '前相撲', from: 0,   body: '#f1efe8', belt: '#111111' },
+    { name: '序の口', from: 3,   body: '#f7e3bd', belt: '#111111' },
+    { name: '序二段', from: 7,   body: '#bfe4f6', belt: '#111111' },
+    { name: '三段目', from: 12,  body: '#c9eaa5', belt: '#111111' },
+    { name: '幕下',   from: 18,  body: '#f8cfe0', belt: '#111111' },
+    { name: '十両',   from: 26,  body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 36,  body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 48,  body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 62,  body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 78,  body: '#ff9a3c', belt: '#14507a' },
+    { name: '横綱',   from: 100, body: '#ffee00', belt: '#1f5c00' },
+  ];
+  const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
+
+  // ---- 画像（はなりきしの絵は ../parts/ に共通で置いてある） ----
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
+  const IMG = {};
+  const CX = 513, CY = 538, BODY_R = 395;         // 絵の中の体の中心と半径
+  const loadImages = () => Promise.all(SRC.map(n => new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => { IMG[n] = i; res(); }; i.onerror = () => rej(new Error('画像を読み込めません: ' + n)); i.src = `../parts/${n}.png`;
+  })));
+  const tint = (img, color) => {
+    const c = document.createElement('canvas'); c.width = c.height = 1024;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, 1024, 1024); return c;
+  };
+  // ランクごとの色の力士（face: normal / hit / win）を作る。半径 r の大きさで返す
+  const R = 24, DPR = 2, sprites = [];
+  function buildSprites() {
+    const size = Math.ceil(1024 * R / BODY_R * DPR);
+    RANKS.forEach(rk => {
+      const bodyT = tint(IMG.body_color, rk.body), beltT = tint(IMG.mawashi, rk.belt), faces = {};
+      for (const face of ['normal', 'hit', 'win']) {
+        const c = document.createElement('canvas'); c.width = c.height = size;
+        const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+        const d = im => g.drawImage(im, 0, 0, size, size);
+        d(bodyT); d(beltT); d(IMG.body_line); d(face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win);
+        faces[face] = c;
+      }
+      sprites.push(faces);
+    });
+  }
+  // 体の中心を (x, y) に置いて描く
+  function drawSumo(g, lv, face, x, y, sx = 1, sy = 1) {
+    const cv = sprites[lv][face], k = R / BODY_R;
+    g.save(); g.translate(x, y); g.scale(sx, sy);
+    g.drawImage(cv, -CX * k, -CY * k, cv.width / DPR, cv.height / DPR);
+    g.restore();
+  }
+
+  // ---- 状態 ----
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+  let state, score, best, t = 0;
+  try { best = +localStorage.getItem(BEST_KEY) || 0; } catch { best = 0; }
+
+  function reset() { state = 'play'; score = 0; }
+  function gameOver() {
+    state = 'over';
+    if (score > best) { best = score; try { localStorage.setItem(BEST_KEY, best); } catch {} }
+  }
+  // TODO: ここにゲームの動きを書く。この雛形は、タップで点が増えるだけ
+  function tap() { if (state === 'over') return reset(); score++; if (score >= 5 && Math.random() < 0.15) gameOver(); }
+
+  function update(dt) { t += dt; }
+
+  function text(g, s, x, y, size, color = '#3a2a10', stroke = '#fff8dc') {
+    g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = size / 5; g.strokeStyle = stroke; g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
+  }
+
+  function draw() {
+    const g = ctx, lv = rankOf(score);
+    g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
+    drawSumo(g, lv, state === 'over' ? 'hit' : 'normal', W / 2, H / 2 + Math.sin(t * 3) * 6);
+    // 上部バー（位・スコア）
+    g.fillStyle = 'rgba(255,248,220,.96)'; g.fillRect(0, 0, W, 58);
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 58); g.lineTo(W, 58); g.stroke();
+    text(g, RANKS[lv].name, 70, 30, 22, '#3a2a10', 'rgba(0,0,0,0)');
+    text(g, String(score), W - 40, 30, 28, '#3a2a10', 'rgba(0,0,0,0)');
+    text(g, 'タップで 点が増える（雛形）', W / 2, 330, 18);
+    if (state === 'over') {
+      g.fillStyle = 'rgba(58,42,16,.5)'; g.fillRect(0, 0, W, H);
+      g.drawImage(IMG.home, W / 2 - 100, 130, 200, 200);
+      text(g, 'おしまい！', W / 2, 360, 36, '#fff', '#3a2a10');
+      text(g, `${score} 点  ベスト ${best}`, W / 2, 415, 22, '#fff', '#3a2a10');
+      text(g, 'タップで もういちど', W / 2, 480, 22, '#9dffb0', '#3a2a10');
+    }
+  }
+
+  let last = 0;
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
+    update(dt); draw(); requestAnimationFrame(frame);
+  }
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); tap(); });
+  window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) tap(); } });
+
+  loadImages().then(() => { buildSprites(); reset(); requestAnimationFrame(frame); })
+    .catch(err => { document.body.textContent = err.message; });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
