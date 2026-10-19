@@ -1,13 +1,13 @@
 [
   {
-    "id": "dohyo",
-    "title": "はなりきし土俵将棋",
-    "desc": "押して押して、相手の横綱を土俵の外へ",
-    "path": "dohyo/",
-    "thumb": "thumbs/dohyo.jpg",
-    "tags": ["ボード", "対戦"],
+    "id": "shogi",
+    "title": "はなりきし将棋",
+    "desc": "5×5の将棋。相手の駒は何か分からない",
+    "path": "shogi/",
+    "thumb": "thumbs/shogi.jpg",
+    "tags": ["ボード"],
     "added": "2026-10-20",
-    "best": { "key": "sumo-dohyo-best", "type": "number", "unit": "連勝" }
+    "best": { "key": "sumo-shogi-best", "type": "number", "unit": "連勝" }
   },
   {
     "id": "survivors",

@@ -1,7 +1,7 @@
 {
-  "name": "はなりきし土俵将棋",
-  "short_name": "土俵将棋",
-  "description": "相手の横綱を土俵の外へ押し出す、はなりきしの将棋",
+  "name": "はなりきし将棋",
+  "short_name": "将棋",
+  "description": "5×5の将棋。相手の駒は何か分からない",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

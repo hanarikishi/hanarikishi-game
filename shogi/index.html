@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>はなりきし将棋</title>
+<link rel="icon" href="../parts/icon-192.png">
+<link rel="apple-touch-icon" href="../parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f6e7b8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #e9d79c; display: flex; justify-content: center; align-items: center;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  canvas {
+    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    box-shadow: 0 0 30px rgba(60, 40, 0, .3); touch-action: none; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="840" height="1400"></canvas>
+
+<script>
+(() => {
+  'use strict';
+  const W = 420, H = 700;
+  const BEST_KEY = 'sumo-shogi-best';   // 最高連勝
+  const RUN_KEY = 'sumo-shogi-run';     // いまの連勝（続きから遊べるように）
+
+  // 番付（全ゲーム共通）。このゲームでは連勝数がそのまま番付になる
+  const RANKS = [
+    { name: '前相撲', from: 0,   body: '#f1efe8', belt: '#111111' },
+    { name: '序の口', from: 3,   body: '#f7e3bd', belt: '#111111' },
+    { name: '序二段', from: 7,   body: '#bfe4f6', belt: '#111111' },
+    { name: '三段目', from: 12,  body: '#c9eaa5', belt: '#111111' },
+    { name: '幕下',   from: 18,  body: '#f8cfe0', belt: '#111111' },
+    { name: '十両',   from: 26,  body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 36,  body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 48,  body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 62,  body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 78,  body: '#ff9a3c', belt: '#14507a' },
+    { name: '横綱',   from: 100, body: '#ffee00', belt: '#1f5c00' },
+  ];
+  const rankOfStreak = s => Math.min(s, RANKS.length - 1);
+
+  // ---- 画像（はなりきしの絵は ../parts/ に共通で置いてある） ----
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
+  const IMG = {};
+  const CX = 513, CY = 538, BODY_R = 395;         // 絵の中の体の中心と半径
+  const loadImages = () => Promise.all(SRC.map(n => new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => { IMG[n] = i; res(); }; i.onerror = () => rej(new Error('画像を読み込めません: ' + n)); i.src = `../parts/${n}.png`;
+  })));
+  const tint = (img, color) => {
+    const c = document.createElement('canvas'); c.width = c.height = 1024;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, 1024, 1024); return c;
+  };
+  // 色ごとの力士（face: normal / hit / win）。使うときに作ってとっておく
+  const SPR_R = 34, DPR = 2, spriteCache = {};
+  function sprite(body, belt) {
+    const key = body + belt;
+    if (spriteCache[key]) return spriteCache[key];
+    const size = Math.ceil(1024 * SPR_R / BODY_R * DPR);
+    const bodyT = tint(IMG.body_color, body), beltT = tint(IMG.mawashi, belt), faces = {};
+    for (const face of ['normal', 'hit', 'win']) {
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+      const d = im => g.drawImage(im, 0, 0, size, size);
+      d(bodyT); d(beltT); d(IMG.body_line); d(face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win);
+      faces[face] = c;
+    }
+    return (spriteCache[key] = faces);
+  }
+  // 体の中心を (x, y) に、半径 r で描く
+  function drawSumo(g, faces, face, x, y, r, alpha = 1) {
+    const k = r / BODY_R;
+    g.save(); g.globalAlpha = alpha; g.translate(x, y);
+    g.drawImage(faces[face], -CX * k, -CY * k, 1024 * k, 1024 * k);
+    g.restore();
+  }
+
+  // ================= 将棋のルール =================
+  // 盤は 5x5。マスの値: 0=空、符号が持ち主（+が自分=下、-がCPU=上）、絶対値が駒
+  const P = 1, S = 2, G = 3, B = 4, R = 5, K = 6, PRO = 8;
+  const NAME = { 1: '歩', 2: '銀', 3: '金', 4: '角', 5: '飛', 6: '玉', 9: 'と', 10: '全', 12: '馬', 13: '龍' };
+  const LONG = { 1: '歩兵', 2: '銀将', 3: '金将', 4: '角行', 5: '飛車', 6: '玉将' };
+  const VAL = { 1: 1, 2: 5, 3: 6, 4: 8, 5: 10, 6: 300, 9: 6, 10: 6, 12: 11, 13: 13 };
+  // 向き 0=前 1=右前 2=右 3=右後 4=後 5=左後 6=左 7=左前（下側から見て）
+  const DR = [-1, -1, 0, 1, 1, 1, 0, -1], DC = [0, 1, 1, 1, 0, -1, -1, -1];
+  const GOLD = [[0, 1, 7, 2, 6, 4], []];
+  const MOVES = {               // [1マスだけ動ける向き, どこまでも進める向き]
+    1: [[0], []], 2: [[0, 1, 7, 3, 5], []], 3: GOLD, 4: [[], [1, 3, 5, 7]], 5: [[], [0, 2, 4, 6]],
+    6: [[0, 1, 2, 3, 4, 5, 6, 7], []], 9: GOLD, 10: GOLD, 12: [[0, 2, 4, 6], [1, 3, 5, 7]], 13: [[1, 3, 5, 7], [0, 2, 4, 6]],
+  };
+  const NB = [];
+  for (let i = 0; i < 25; i++) {
+    NB[i] = [];
+    for (let d = 0; d < 8; d++) {
+      const r = (i / 5 | 0) + DR[d], c = i % 5 + DC[d];
+      NB[i][d] = r < 0 || r > 4 || c < 0 || c > 4 ? -1 : r * 5 + c;
+    }
+  }
+  const sgn = v => v > 0 ? 1 : v < 0 ? -1 : 0;
+  const canPro = c => c === P || c === S || c === B || c === R;
+  const zone = (i, side) => side === 1 ? i < 5 : i >= 20;     // 一番奥の段
+  const hi = side => side === 1 ? 0 : 1;
+
+  // 指し手: { f: 元のマス（打つときは -1）, t: 行き先, p: 成るか, c: 打つ駒 }
+  function gen(st, side, out, capOnly) {
+    const bd = st.bd;
+    const add = (i, j, c) => {
+      if (canPro(c) && (zone(i, side) || zone(j, side))) {
+        out.push({ f: i, t: j, p: true });
+        if (!(c === P && zone(j, side))) out.push({ f: i, t: j, p: false });   // 歩は奥で必ず成る
+      } else out.push({ f: i, t: j, p: false });
+    };
+    for (let i = 0; i < 25; i++) {
+      const v = bd[i]; if (v * side <= 0) continue;
+      const c = Math.abs(v), [stp, sl] = MOVES[c];
+      for (const d0 of stp) {
+        const j = NB[i][side === 1 ? d0 : (d0 + 4) & 7];
+        if (j < 0 || bd[j] * side > 0 || (capOnly && !bd[j])) continue;
+        add(i, j, c);
+      }
+      for (const d0 of sl) {
+        const d = side === 1 ? d0 : (d0 + 4) & 7;
+        for (let j = NB[i][d]; j >= 0; j = NB[j][d]) {
+          if (bd[j] * side > 0) break;
+          if (!capOnly || bd[j]) add(i, j, c);
+          if (bd[j]) break;
+        }
+      }
+    }
+    if (capOnly) return out;
+    const h = st.h[hi(side)];
+    for (let c = 1; c <= 5; c++) if (h[c]) for (let j = 0; j < 25; j++) {
+      if (bd[j]) continue;
+      if (c === P) {
+        if (zone(j, side)) continue;                                // 行き所のない歩
+        let nifu = false;
+        for (let k = j % 5; k < 25; k += 5) if (bd[k] === side * P) nifu = true;
+        if (nifu) continue;                                          // 二歩
+      }
+      out.push({ f: -1, t: j, c });
+    }
+    return out;
+  }
+  function apply(st, m, side) {
+    const bd = st.bd.slice(), h = [st.h[0].slice(), st.h[1].slice()];
+    if (m.f < 0) { bd[m.t] = side * m.c; h[hi(side)][m.c]--; }
+    else {
+      let c = Math.abs(bd[m.f]); if (m.p) c |= PRO;
+      const cap = Math.abs(bd[m.t]) & 7;
+      if (cap && cap !== K) h[hi(side)][cap]++;
+      bd[m.t] = side * c; bd[m.f] = 0;
+    }
+    return { bd, h };
+  }
+  const takesKing = (st, m) => m.f >= 0 && Math.abs(st.bd[m.t]) === K;
+
+  // ================= CPU =================
+  // CPU にも相手（あなた）の駒は見えない。動きから「何の駒でありうるか」を絞り込み、
+  // ありうる並びをいくつか作って、それぞれで読んだ点数の平均で手を選ぶ
+  function evaluate(st) {         // 下側(+)から見た点数
+    let s = 0;
+    for (let i = 0; i < 25; i++) { const v = st.bd[i]; if (v) s += sgn(v) * VAL[Math.abs(v)]; }
+    for (let c = 1; c <= 5; c++) s += (st.h[0][c] - st.h[1][c]) * VAL[c] * 0.9;
+    return s;
+  }
+  const WIN = 10000;
+  function qsearch(st, side, a, b, qd) {
+    const stand = evaluate(st) * side;
+    if (stand >= b || qd === 0) return stand;
+    if (stand > a) a = stand;
+    for (const m of gen(st, side, [], true)) {
+      if (takesKing(st, m)) return WIN;
+      const v = -qsearch(apply(st, m, side), -side, -b, -a, qd - 1);
+      if (v >= b) return v;
+      if (v > a) a = v;
+    }
+    return a;
+  }
+  const capVal = (st, m) => m.f >= 0 && st.bd[m.t] ? VAL[Math.abs(st.bd[m.t])] : 0;
+  function search(st, side, depth, a, b) {
+    if (depth === 0) return qsearch(st, side, a, b, 3);
+    const ms = gen(st, side, []);
+    if (!ms.length) return -WIN;
+    ms.sort((x, y) => capVal(st, y) - capVal(st, x));
+    let best = -Infinity;
+    for (const m of ms) {
+      if (takesKing(st, m)) return WIN + depth;
+      const v = -search(apply(st, m, side), -side, depth - 1, -b, -a);
+      if (v > best) best = v;
+      if (v > a) a = v;
+      if (a >= b) break;
+    }
+    return best;
+  }
+  // 見えている情報だけから、下側の駒の中身をひとつ当てはめた盤を作る
+  // cands: マスごとの「ありうる駒」のビット、counts: 下側の盤上の駒の種類ごとの数（これは公開情報）
+  function sampleBoard(st, cands, counts) {
+    const cells = Object.keys(cands).map(Number).sort(() => Math.random() - 0.5);
+    const cnt = counts.slice(), pick = {};
+    const go = k => {
+      if (k === cells.length) return true;
+      const i = cells[k], opts = [];
+      for (let t = 1; t <= 6; t++) if (cnt[t] && (cands[i] >> t & 1)) opts.push(t);
+      opts.sort(() => Math.random() - 0.5);
+      for (const t of opts) { cnt[t]--; pick[i] = t; if (go(k + 1)) return true; cnt[t]++; }
+      return false;
+    };
+    const bd = st.bd.slice();
+    if (go(0)) for (const i of cells) bd[i] = bd[i] >= PRO ? pick[i] | PRO : pick[i];
+    return { bd, h: st.h };
+  }
+  const LEVELS = [   // 連勝数ごとの強さ（読む深さ・並びの数・わざと入れるゆらぎ）
+    { depth: 1, samples: 2, noise: 4 }, { depth: 1, samples: 3, noise: 2 }, { depth: 2, samples: 2, noise: 3 },
+    { depth: 2, samples: 3, noise: 2 }, { depth: 2, samples: 4, noise: 1 }, { depth: 2, samples: 5, noise: 0.6 },
+    { depth: 2, samples: 6, noise: 0.3 }, { depth: 2, samples: 8, noise: 0 }, { depth: 3, samples: 3, noise: 0.3 },
+    { depth: 3, samples: 4, noise: 0 }, { depth: 3, samples: 5, noise: 0 },
+  ];
+  // st の下側の駒の中身は見ずに、cands と counts から当てはめ直して読む
+  function cpuMove(st, cands, counts, lv) {
+    const L = LEVELS[Math.min(lv, LEVELS.length - 1)];
+    const ms = gen(st, -1, []);
+    if (!ms.length) return null;
+    const boards = [];
+    for (let s = 0; s < L.samples; s++) boards.push(sampleBoard(st, cands, counts));
+    const score = (m, depth) => boards.reduce((sum, sb) =>
+      sum + (takesKing(sb, m) ? WIN : -search(apply(sb, m, -1), 1, depth - 1, -Infinity, Infinity)), 0) / boards.length;
+    // 全部の手を浅く読み、よさそうな手だけを深く読む（速くするため）
+    let list = ms.map(m => ({ m, v: score(m, 1) }));
+    if (L.depth > 1) {
+      list.sort((x, y) => y.v - x.v);
+      list = list.slice(0, L.depth > 2 ? 6 : 10).map(x => ({ m: x.m, v: score(x.m, L.depth) }));
+    }
+    let best = null, bv = -Infinity;
+    for (const x of list) { const v = x.v + Math.random() * L.noise; if (v > bv) { bv = v; best = x.m; } }
+    return best;
+  }
+  // 駒 c で a→b に動けるか（途中に駒がないことは、実際に動けたので分かっている）
+  function canReach(c, a, b) {
+    const dr = (b / 5 | 0) - (a / 5 | 0), dc = b % 5 - a % 5, [stp, sl] = MOVES[c];
+    if (stp.some(d => DR[d] === dr && DC[d] === dc)) return true;
+    if (dr && dc && Math.abs(dr) !== Math.abs(dc)) return false;
+    const n = Math.max(Math.abs(dr), Math.abs(dc));
+    return sl.some(d => DR[d] * n === dr && DC[d] * n === dc);
+  }
+  // 下側の駒が a→b に動いたのを見て、ありうる駒を絞る
+  function narrow(mask, a, b, wasPro, nowPro) {
+    let m = 0;
+    for (let t = 1; t <= 6; t++) {
+      if (!(mask >> t & 1)) continue;
+      if (wasPro && !canPro(t)) continue;
+      if (!canReach(wasPro ? t | PRO : t, a, b)) continue;
+      if (nowPro && !canPro(t)) continue;
+      if (!nowPro && t === P && zone(b, 1)) continue;
+      m |= 1 << t;
+    }
+    return m || mask;
+  }
+  // ================= 将棋のルール・CPU ここまで =================
+
+  // ================= 状態 =================
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+  const load = k => { try { return +localStorage.getItem(k) || 0; } catch { return 0; } };
+  const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  let best = load(BEST_KEY), streak = load(RUN_KEY);
+
+  const BX = 210, BY = 300, CELL = 74;
+  const cellX = i => BX + (i % 5 - 2) * CELL, cellY = i => BY + ((i / 5 | 0) - 2) * CELL;
+  const MAX_PLY = 200;                 // 100手ずつで決着しなければ引き分け
+  const ALL = 0b1111110;               // 歩〜玉 のどれでもありうる
+
+  let scene = 'title', t = 0;
+  // pcs: 盤上の駒 { side, c(成りも含む), cell, x, y, cand(CPUから見たありうる駒) }
+  let pcs, hands, turn, sel, targets, promo, busy, ply, banner, lastMove, result, thinking, after, ghosts;
+
+  const DEFAULT_SETUP = [[24, K], [23, G], [22, S], [21, B], [20, R], [19, P]];
+  function randomCpuSetup() {
+    // CPU の陣形: 玉は一番奥、ほかは上2段のどこか
+    const k = Math.floor(Math.random() * 5);
+    const rest = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].filter(c => c !== k).sort(() => Math.random() - 0.5);
+    return [[k, K], [rest[0], R], [rest[1], B], [rest[2], G], [rest[3], S], [rest[4], P]];
+  }
+  const mkPiece = (side, c, cell, cand) => ({ side, c, cell, x: cellX(cell), y: cellY(cell), cand, hit: 0 });
+
+  function newSetup() {
+    pcs = [];
+    DEFAULT_SETUP.forEach(([cell, c]) => pcs.push(mkPiece(1, c, cell, ALL)));
+    randomCpuSetup().forEach(([cell, c]) => pcs.push(mkPiece(-1, c, cell, 0)));
+    hands = [[0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0]];
+    sel = null; targets = []; promo = null; busy = 0; ply = 0; banner = null; lastMove = null;
+    result = null; thinking = false; after = null; turn = 1; ghosts = [];
+    scene = 'setup';
+  }
+  function shuffleSetup() {
+    const cells = [15, 16, 17, 18, 19, 20, 21, 22, 23, 24].sort(() => Math.random() - 0.5);
+    pcs.filter(p => p.side === 1).forEach((p, i) => { p.cell = cells[i]; });
+    sel = null;
+  }
+  function startGame() { scene = 'play'; sel = null; banner = { text: 'よろしくお願いします', t: 0 }; }
+
+  const pieceAt = i => pcs.find(p => p.cell === i);
+  const state = () => {
+    const bd = new Array(25).fill(0);
+    pcs.forEach(p => { bd[p.cell] = p.side * p.c; });
+    return { bd, h: hands };
+  };
+  const human = () => turn === 1;
+
+  // CPU に渡す「見えている情報」: あなたの駒のありうる種類と、種類ごとの数
+  function cpuView() {
+    const cands = {}, counts = [0, 0, 0, 0, 0, 0, 0];
+    pcs.forEach(p => { if (p.side === 1) { cands[p.cell] = p.cand; counts[p.c & 7]++; } });
+    return { cands, counts };
+  }
+
+  function play(m, side) {
+    let txt = null, kingTaken = false;
+    if (m.f < 0) {
+      hands[hi(side)][m.c]--;
+      pcs.push(mkPiece(side, m.c, m.t, 1 << m.c));
+      if (side === -1) txt = `CPUが${NAME[m.c]}を打った`;
+    } else {
+      const p = pieceAt(m.f), q = pieceAt(m.t);
+      const wasPro = p.c >= PRO;
+      if (q) {
+        pcs.splice(pcs.indexOf(q), 1);
+        ghosts.push({ ...q, ot: 0 });
+        const base = q.c & 7;
+        if (base === K) { kingTaken = true; txt = side === 1 ? '玉を取った！' : '玉を取られた…'; }
+        else { hands[hi(side)][base]++; txt = side === 1 ? `${LONG[base]}だった！` : `${LONG[base]}を取られた`; }
+      }
+      if (side === 1) p.cand = narrow(p.cand, m.f, m.t, wasPro, m.p || wasPro);
+      if (m.p) { p.c |= PRO; if (!txt) txt = side === 1 ? '成った！' : 'CPUの駒が成った'; }
+      p.cell = m.t; p.hit = 0.4;
+    }
+    sel = null; targets = []; ply++;
+    lastMove = { f: m.f, t: m.t, side };
+    if (txt) banner = { text: txt, t: 0 };
+    busy = 0.3;
+    after = () => {
+      if (kingTaken) return finish(side, 'king');
+      if (ply >= MAX_PLY) return finish(0, 'limit');
+      turn = -turn;
+      if (!gen(state(), turn, []).length) return finish(-turn, 'stuck');
+      if (!human()) cpuThink();
+    };
+  }
+
+  function cpuThink() {
+    thinking = true;
+    setTimeout(() => {
+      const v = cpuView();
+      const m = cpuMove(state(), v.cands, v.counts, streak);
+      thinking = false;
+      if (m) play(m, -1); else finish(1, 'stuck');
+    }, 350);
+  }
+
+  function finish(winner, how) {
+    const r = { winner, how, from: streak, to: streak, t: 0 };
+    if (winner === 1) { streak++; if (streak > best) { best = streak; save(BEST_KEY, best); } }
+    else if (winner === -1) streak = 0;
+    save(RUN_KEY, streak);
+    r.to = streak;
+    result = r;
+    scene = 'result';
+  }
+
+  // ================= 入力 =================
+  let buttons = [];
+  const HAND_Y = { 1: 524, '-1': 78 };
+  function hitCell(x, y) {
+    for (let i = 0; i < 25; i++) if (Math.abs(x - cellX(i)) < CELL / 2 && Math.abs(y - cellY(i)) < CELL / 2) return i;
+    return -1;
+  }
+  function handChips(side) {     // 持ち駒の並び（表示とタップの両方で使う）
+    const h = hands[hi(side)], list = [];
+    for (let c = 5; c >= 1; c--) if (h[c]) list.push(c);
+    return list.map((c, k) => ({ c, n: h[c], x: BX - (list.length * 54) / 2 + k * 54 + 27, y: HAND_Y[side] }));
+  }
+  function tap(x, y) {
+    const b = buttons.find(b => x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h);
+    if (b) return b.fn();
+    if (scene === 'rules') { scene = 'title'; return; }
+    if (promo) return;
+    const c = hitCell(x, y);
+    if (scene === 'setup') {
+      if (c < 15) { sel = null; return; }
+      const p = pieceAt(c);
+      if (sel) {
+        const sp = pieceAt(sel.cell);
+        if (p && p !== sp) p.cell = sp.cell;
+        sp.cell = c; sel = null;
+      } else if (p && p.side === 1) sel = { cell: c };
+      return;
+    }
+    if (scene !== 'play' || busy > 0 || after || thinking || !human()) return;
+    const chip = handChips(1).find(ch => Math.abs(x - ch.x) < 25 && Math.abs(y - ch.y) < 25);
+    if (chip) {
+      sel = { drop: chip.c };
+      targets = gen(state(), 1, []).filter(m => m.f < 0 && m.c === chip.c);
+      return;
+    }
+    const tg = targets.filter(m => m.t === c);
+    if (sel && tg.length) {
+      if (tg.length === 2) { promo = tg; return; }           // 成る・成らないを選ぶ
+      return play(tg[0], 1);
+    }
+    const p = c >= 0 && pieceAt(c);
+    if (p && p.side === 1) { sel = { cell: c }; targets = gen(state(), 1, []).filter(m => m.f === c); }
+    else { sel = null; targets = []; }
+  }
+  function pos(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; }
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); tap(...pos(e)); });
+
+  // ================= 更新 =================
+  function update(dt) {
+    t += dt;
+    if (scene === 'result' && result.t >= 0) result.t += dt;
+    if (!pcs) return;
+    for (const p of pcs) {
+      const k = Math.min(1, dt * 14);
+      p.x += (cellX(p.cell) - p.x) * k; p.y += (cellY(p.cell) - p.y) * k;
+      p.hit = Math.max(0, p.hit - dt);
+    }
+    ghosts.forEach(gh => { gh.ot += dt; });
+    ghosts = ghosts.filter(gh => gh.ot < 0.6);
+    if (banner) { banner.t += dt; if (banner.t > 1.4) banner = null; }
+    if (busy > 0) { busy -= dt; if (busy <= 0 && after) { const f = after; after = null; f(); } }
+  }
+
+  // ================= 描画 =================
+  function text(g, s, x, y, size, color = '#3a2a10', stroke = '#fff8dc', align = 'center') {
+    g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`; g.textAlign = align; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = size / 5; g.strokeStyle = stroke; g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
+  }
+  function rrect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+  function button(g, label, sub, x, y, w, h, color, fn, size = 22) {
+    rrect(g, x, y + 4, w, h, 16); g.fillStyle = 'rgba(58,42,16,.35)'; g.fill();
+    rrect(g, x, y, w, h, 16); g.fillStyle = color; g.fill();
+    g.lineWidth = 3; g.strokeStyle = '#3a2a10'; g.stroke();
+    if (sub) { text(g, label, x + w / 2, y + h / 2 - 9, size, '#3a2a10', 'rgba(0,0,0,0)'); text(g, sub, x + w / 2, y + h / 2 + 15, 13, '#6b5530', 'rgba(0,0,0,0)'); }
+    else text(g, label, x + w / 2, y + h / 2, size, '#3a2a10', 'rgba(0,0,0,0)');
+    buttons.push({ x, y, w, h, fn });
+  }
+
+  const SIDE_COLOR = { 1: '#d8473a', '-1': '#3a6fd8' };
+  function pieceFaces(side, c) {
+    if (c >= PRO) return sprite('#ff8a80', side === 1 ? '#b71c1c' : '#14507a');        // 成った駒は赤い体
+    if (side === 1) { const rk = RANKS[Math.min(rankOfStreak(streak), RANKS.length - 2)]; return sprite(rk.body, rk.belt); }
+    return sprite('#cfd8dc', '#14507a');
+  }
+
+  function drawBoard(g) {
+    const x0 = BX - CELL * 2.5, y0 = BY - CELL * 2.5, S5 = CELL * 5;
+    rrect(g, x0 - 10, y0 - 10, S5 + 20, S5 + 20, 14); g.fillStyle = '#c99d5c'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#8a6630'; g.stroke();
+    g.fillStyle = '#ecd3a0'; g.fillRect(x0, y0, S5, S5);
+    // 成れる段
+    g.fillStyle = 'rgba(216,71,58,.08)'; g.fillRect(x0, y0, S5, CELL);
+    g.fillStyle = 'rgba(58,111,216,.08)'; g.fillRect(x0, y0 + CELL * 4, S5, CELL);
+    if (scene === 'setup') { g.fillStyle = 'rgba(255,220,80,.3)'; g.fillRect(x0, y0 + CELL * 3, S5, CELL * 2); }
+    if (lastMove) for (const c of [lastMove.f, lastMove.t]) if (c >= 0) {
+      g.fillStyle = lastMove.side === 1 ? 'rgba(216,71,58,.16)' : 'rgba(58,111,216,.22)';
+      g.fillRect(cellX(c) - CELL / 2, cellY(c) - CELL / 2, CELL, CELL);
+    }
+    g.strokeStyle = '#8a6630'; g.lineWidth = 1.5;
+    for (let k = 0; k <= 5; k++) {
+      g.beginPath(); g.moveTo(x0 + k * CELL, y0); g.lineTo(x0 + k * CELL, y0 + S5); g.stroke();
+      g.beginPath(); g.moveTo(x0, y0 + k * CELL); g.lineTo(x0 + S5, y0 + k * CELL); g.stroke();
+    }
+  }
+
+  // 自分の駒のまわりに、動ける向きのポチ（1マス）と棒（どこまでも）
+  function drawDots(g, c, x, y, a = 1) {
+    const [stp, sl] = MOVES[c];
+    g.save(); g.globalAlpha = a; g.fillStyle = '#c62818'; g.strokeStyle = '#c62818'; g.lineCap = 'round';
+    for (const d of stp) { g.beginPath(); g.arc(x + DC[d] * 31, y + DR[d] * 31, 4.5, 0, Math.PI * 2); g.fill(); }
+    g.lineWidth = 6;
+    for (const d of sl) { g.beginPath(); g.moveTo(x + DC[d] * 25, y + DR[d] * 25); g.lineTo(x + DC[d] * 34, y + DR[d] * 34); g.stroke(); }
+    g.restore();
+  }
+  function nameChip(g, s, x, y, side) {
+    g.beginPath(); g.arc(x, y, 10, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill();
+    g.lineWidth = 2; g.strokeStyle = SIDE_COLOR[side]; g.stroke();
+    text(g, s, x, y + 1, 12, '#3a2a10', 'rgba(0,0,0,0)');
+  }
+
+  function drawPiece(g, p, a = 1, face = 'normal') {
+    const r = 22;
+    g.save(); g.globalAlpha = a * 0.75;
+    g.beginPath(); g.ellipse(p.x, p.y + r * 0.8, r * 1.05, r * 0.38, 0, 0, Math.PI * 2); g.fillStyle = SIDE_COLOR[p.side]; g.fill();
+    g.restore();
+    if (a === 1 && sel && sel.cell === p.cell && p.side === 1) {
+      g.beginPath(); g.arc(p.x, p.y, r + 12, 0, Math.PI * 2); g.lineWidth = 4; g.strokeStyle = '#ffcf00'; g.stroke();
+    }
+    drawSumo(g, pieceFaces(p.side, p.c), face, p.x, p.y, r, a);
+    if (p.side === 1) { drawDots(g, p.c, p.x, p.y, a); nameChip(g, NAME[p.c], p.x + 18, p.y + 16, 1); }
+    else if (scene === 'result') nameChip(g, NAME[p.c], p.x + 18, p.y + 16, -1);   // 終わったら相手の駒を明かす
+  }
+
+  function drawPieces(g) {
+    for (const gh of ghosts) drawPiece(g, gh, 1 - gh.ot / 0.6, 'hit');
+    for (const p of [...pcs].sort((a, b) => a.y - b.y)) {
+      let face = p.hit > 0 ? 'hit' : 'normal';
+      if (scene === 'result' && result.winner === p.side) face = 'win';
+      drawPiece(g, p, 1, face);
+    }
+  }
+
+  function drawTargets(g) {
+    const seen = new Set();
+    for (const m of targets) {
+      if (seen.has(m.t)) continue; seen.add(m.t);
+      const x = cellX(m.t), y = cellY(m.t);
+      if (pieceAt(m.t)) { g.beginPath(); g.arc(x, y, 33, 0, Math.PI * 2); g.lineWidth = 4; g.strokeStyle = 'rgba(230,40,30,.85)'; g.stroke(); }
+      else { g.beginPath(); g.arc(x, y, 11, 0, Math.PI * 2); g.fillStyle = 'rgba(60,170,80,.75)'; g.fill(); }
+    }
+  }
+
+  function drawHands(g) {
+    for (const side of [1, -1]) {
+      const y = HAND_Y[side];
+      text(g, side === 1 ? 'あなたの持ち駒' : 'CPUの持ち駒', 14, y - 22, 11, SIDE_COLOR[side], 'rgba(0,0,0,0)', 'left');
+      const chips = handChips(side);
+      if (!chips.length) text(g, 'なし', BX, y, 13, '#a08a60', 'rgba(0,0,0,0)');
+      for (const ch of chips) {
+        rrect(g, ch.x - 23, ch.y - 21, 46, 42, 9);
+        g.fillStyle = sel && sel.drop === ch.c && side === 1 ? '#ffe08a' : '#fff8dc'; g.fill();
+        g.lineWidth = 2.5; g.strokeStyle = SIDE_COLOR[side]; g.stroke();
+        text(g, NAME[ch.c], ch.x - 3, ch.y + 1, 20, '#3a2a10', 'rgba(0,0,0,0)');
+        if (ch.n > 1) text(g, String(ch.n), ch.x + 15, ch.y + 12, 12, SIDE_COLOR[side], '#fff8dc');
+      }
+    }
+  }
+
+  function topBar(g) {
+    const rk = RANKS[rankOfStreak(streak)];
+    g.fillStyle = 'rgba(255,248,220,.96)'; g.fillRect(0, 0, W, 50);
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 50); g.lineTo(W, 50); g.stroke();
+    text(g, `${rk.name}  ${streak}連勝`, 14, 26, 19, '#3a2a10', 'rgba(0,0,0,0)', 'left');
+    if (scene === 'play') text(g, `${ply + 1}手目`, W - 100, 26, 16, '#3a2a10', 'rgba(0,0,0,0)', 'right');
+    if (scene === 'play' || scene === 'setup') button(g, 'やめる', '', W - 86, 8, 74, 34, '#fff', () => { scene = 'title'; }, 18);
+  }
+
+  function drawPlay(g) {
+    g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
+    topBar(g);
+    drawBoard(g);
+    drawTargets(g);
+    drawPieces(g);
+    drawHands(g);
+    if (scene === 'setup') {
+      text(g, '下の2段で陣形を組もう', BX, 572, 19, '#b71c1c');
+      text(g, '駒をタップ → 置きたいマスをタップ（入れ替えもOK）', BX, 598, 13, '#6b5530');
+      button(g, 'おまかせ', '', 30, 622, 140, 52, '#fff', shuffleSetup);
+      button(g, 'この陣形で始める', '', 186, 622, 204, 52, '#9dffb0', startGame, 19);
+      return;
+    }
+    if (scene === 'play') {
+      const msg = thinking ? 'CPUが考え中…' : busy > 0 ? '' : human() ? 'あなたの番' : '';
+      if (msg) text(g, msg, BX, 590, 22, human() ? '#c62818' : '#2350b0');
+      if (human() && !sel && ply < 2 && !busy) text(g, 'ポチ＝1マス動ける向き　棒＝どこまでも進める向き', BX, 625, 12, '#6b5530');
+    }
+    if (banner) {
+      const k = Math.min(1, banner.t * 6), s = 1 + (1 - k) * 0.6, a = Math.min(1, (1.4 - banner.t) * 4);
+      g.save(); g.globalAlpha = a; g.translate(BX, BY); g.scale(s, s);
+      text(g, banner.text, 0, 0, 30, '#fff', '#b71c1c');
+      g.restore();
+    }
+    if (promo) {
+      g.fillStyle = 'rgba(58,42,16,.45)'; g.fillRect(0, 0, W, H);
+      rrect(g, 60, 230, W - 120, 170, 20); g.fillStyle = '#fff8dc'; g.fill(); g.lineWidth = 4; g.strokeStyle = '#3a2a10'; g.stroke();
+      text(g, '成りますか？', W / 2, 270, 24);
+      const yes = promo.find(m => m.p), no = promo.find(m => !m.p);
+      button(g, '成る', '', 85, 310, 115, 56, '#ffb3a1', () => { promo = null; play(yes, 1); });
+      button(g, '成らない', '', 220, 310, 115, 56, '#fff', () => { promo = null; play(no, 1); }, 19);
+    }
+  }
+
+  function drawResult(g) {
+    if (result.t < 1.0) return;
+    const r = result, a = Math.min(1, (r.t - 1.0) * 4);
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = 'rgba(58,42,16,.5)'; g.fillRect(0, 0, W, H);
+    rrect(g, 30, 150, W - 60, 400, 22); g.fillStyle = '#fff8dc'; g.fill(); g.lineWidth = 4; g.strokeStyle = '#3a2a10'; g.stroke();
+    let title, lines = [], btn;
+    const how = r.how === 'king' ? (r.winner === 1 ? '相手の玉を取った' : '玉を取られた') : r.how === 'stuck' ? '動ける手がなくなった' : '200手で引き分け';
+    if (r.winner === 1) {
+      title = '勝ち！'; lines.push(how);
+      if (rankOfStreak(r.to) > rankOfStreak(r.from)) lines.push(`${RANKS[rankOfStreak(r.from)].name} → ${RANKS[rankOfStreak(r.to)].name} に昇進！`);
+      if (r.to === RANKS.length - 1) lines.push('横綱昇進、おめでとう！');
+      lines.push(`${r.to}連勝（最高 ${best}）`);
+      btn = '次の対局へ';
+    } else if (r.winner === -1) {
+      title = '負け…'; lines.push(how, `${r.from}連勝で止まった（最高 ${best}）`, '番付は前相撲から出直し');
+      btn = 'もう一度';
+    } else { title = '引き分け'; lines.push(how, `${r.to}連勝のまま`); btn = '指し直し'; }
+    g.drawImage(IMG.home, W / 2 - 55, 165, 110, 110);
+    text(g, title, W / 2, 305, 40, r.winner === -1 ? '#2350b0' : '#c62818');
+    lines.forEach((s, i) => text(g, s, W / 2, 350 + i * 28, 17));
+    g.restore();
+    if (a >= 1) {
+      button(g, btn, '', 70, 462, W - 140, 50, '#9dffb0', newSetup);
+      button(g, '盤を見る', '', 60, 575, 140, 42, '#fff', () => { result.t = -1; }, 19);
+      button(g, 'タイトルへ', '', 220, 575, 140, 42, '#fff', () => { scene = 'title'; }, 19);
+    }
+  }
+
+  function drawTitle(g) {
+    g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
+    text(g, 'はなりきし', W / 2, 92, 30, '#6b5530');
+    text(g, '将棋', W / 2, 148, 60, '#b71c1c', '#fff8dc');
+    // 盤の上で向かい合う2人（相手は何の駒か分からない）
+    rrect(g, W / 2 - 150, 205, 300, 120, 14); g.fillStyle = '#ecd3a0'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#8a6630'; g.stroke();
+    const bob = Math.sin(t * 3) * 4;
+    drawSumo(g, sprite('#cfd8dc', '#14507a'), 'normal', W / 2 - 62, 268 + bob, 36);
+    text(g, '？', W / 2 - 62, 220 + bob, 22, '#2350b0');
+    const rk = RANKS[Math.min(rankOfStreak(streak), RANKS.length - 2)];
+    drawSumo(g, sprite(rk.body, rk.belt), 'normal', W / 2 + 62, 268 - bob, 30);
+    drawDots(g, K, W / 2 + 62, 268 - bob);
+    const rr = RANKS[rankOfStreak(streak)];
+    button(g, '対局する（CPU）', `いま ${rr.name}・${streak}連勝 ／ 最高 ${best}連勝`, 60, 380, W - 120, 68, '#ffe08a', newSetup);
+    button(g, 'あそびかた', '', 60, 470, W - 120, 52, '#fff', () => { scene = 'rules'; });
+    text(g, '5×5の将棋。相手の駒は何か分からない！', W / 2, 570, 15, '#6b5530');
+    text(g, '勝つたびに番付が上がり、CPUも強くなる', W / 2, 598, 14, '#6b5530');
+  }
+
+  function drawRules(g) {
+    g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
+    text(g, 'あそびかた', W / 2, 46, 30, '#b71c1c');
+    const L = [
+      ['盤と駒', '5×5の盤。駒は 玉・飛・角・金・銀・歩'],
+      ['', 'の6枚ずつ。動き方はふつうの将棋と同じ。'],
+      ['陣形', '始める前に、下の2段へ自由に並べる。'],
+      ['見えない', '相手の駒はみんな同じはなりきし。'],
+      ['', '何の駒かは、動きを見て推理しよう。'],
+      ['ポチ', '自分の駒のまわりのポチ＝1マス動ける向き、'],
+      ['', '棒＝どこまでも進める向き。'],
+      ['持ち駒', '取った駒は打てる（二歩はだめ）。'],
+      ['成り', '一番奥の段に入る・出るときに成れる。'],
+      ['', '成った駒は体が赤くなる（相手のも）。'],
+      ['勝ち', '王手はなし。相手の玉を取ったら勝ち！'],
+      ['', '自分の玉も、取られないように守ろう。'],
+      ['', 'CPUもあなたの駒は見えていない。'],
+    ];
+    L.forEach(([h, s], i) => {
+      if (h) text(g, h, 20, 100 + i * 34, 15, '#b71c1c', 'rgba(0,0,0,0)', 'left');
+      text(g, s, 92, 100 + i * 34, 14, '#3a2a10', 'rgba(0,0,0,0)', 'left');
+    });
+    text(g, 'タップでもどる', W / 2, 650, 20, '#2e7d32');
+  }
+
+  function draw() {
+    const g = ctx;
+    buttons = [];
+    if (scene === 'title') return drawTitle(g);
+    if (scene === 'rules') return drawRules(g);
+    drawPlay(g);
+    if (scene === 'result') {
+      if (result.t < 0) button(g, '結果にもどる', '', 110, 610, 200, 44, '#9dffb0', () => { result.t = 1.0; }, 18);
+      else drawResult(g);
+    }
+  }
+
+  let last = 0;
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
+    update(dt); draw(); requestAnimationFrame(frame);
+  }
+
+  loadImages().then(() => { requestAnimationFrame(frame); })
+    .catch(err => { document.body.textContent = err.message; });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
