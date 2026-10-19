@@ -77,7 +77,7 @@
     kesho:   { name: '化粧まわし', icon: '帯', color: '#d08aff', max: 5, desc: '攻撃範囲 +10%' },
     ashi:    { name: '足袋',     icon: '足', color: '#8affb0', max: 5, desc: '移動速度 +10%' },
     chikara: { name: '力水',     icon: '水', color: '#6ab0ff', max: 5, desc: '体力が少しずつ回復' },
-    maneki:  { name: '招き',     icon: '招', color: '#ffe27a', max: 5, desc: '拾う範囲 +30%' },
+    maneki:  { name: '招き',     icon: '招', color: '#ffe27a', max: 5, desc: '拾う範囲 +40%' },
     mawashi: { name: '締め込み', icon: '締', color: '#b0b0c0', max: 5, desc: '受けるダメージ -1' },
   };
   const MAX_WEAPONS = 6, MAX_PASSIVES = 6;
@@ -203,6 +203,16 @@
       '.#rrrrrr#.',
       '..######..',
     ], { '#': '#7a3a1a', 'r': '#e07a40', 'o': '#ffd070', 'w': '#ffffff' });
+    SPR.magnet = pix([
+      '.rrrrrrrr.',
+      'rrrrrrrrrr',
+      'rr......rr',
+      'rr......rr',
+      'rr......rr',
+      'ww......ww',
+      'ww......ww',
+      'ww......ww',
+    ], { 'r': '#e03030', 'w': '#f2f2f2' });
     SPR.brazier = pix([
       '...yy.y...',
       '..yrryry..',
@@ -359,6 +369,7 @@
   const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return (h ^ (h >>> 16)) >>> 0; };
 
   let state, gt, P, weapons, passives, enemies, gems, items, props, projs, fx, nums, swings, bolts, kills, coins, best;
+  let lastVac = 0;
   let level, xp, xpNeed, spawnT, nextSwarm, nextBoss, propT, choices, banner, camX, camY, shake, nid, killStreak, gemStreak, lastGem, title;
   let joy = null, keys = {}, pausedBy = null;
   try { best = JSON.parse(localStorage.getItem('sumo-surv-best') || 'null') || { time: 0, kills: 0 }; } catch { best = { time: 0, kills: 0 }; }
@@ -366,7 +377,7 @@
   const xpFor = L => L === 1 ? 2 : L === 2 ? 5 : 4 + (L - 1) * 6;
 
   function reset() {
-    state = 'title'; gt = 0; kills = 0; coins = 0; level = 1; xp = 0; xpNeed = xpFor(1);
+    state = 'title'; gt = 0; lastVac = 0; kills = 0; coins = 0; level = 1; xp = 0; xpNeed = xpFor(1);
     P = { x: 0, y: 0, hp: 100, maxHp: 100, iframe: 0, face: 1, moving: false, walkT: 0, hurtT: 0, speed: 100 };
     weapons = []; passives = {};
     enemies = []; gems = []; items = []; props = []; projs = []; fx = []; nums = []; swings = []; bolts = [];
@@ -387,7 +398,7 @@
     S.might = 1 + 0.1 * pv('keiko');
     S.area = 1 + 0.1 * pv('kesho');
     S.cd = Math.max(0.4, 1 - 0.08 * pv('tachiai'));
-    S.magnet = 1 + 0.3 * pv('maneki');
+    S.magnet = 1 + 0.4 * pv('maneki');
     S.regen = 0.12 + 0.3 * pv('chikara');
     S.armor = pv('mawashi');
     S.speed = 1 + 0.1 * pv('ashi');
@@ -497,7 +508,7 @@
     const d = ENEMY[e.type];
     const gtype = d.gem >= 25 ? 'R' : d.gem >= 5 ? 'G' : '';
     gems.push({ x: e.x, y: e.y, v: d.gem, kind: gtype, t: 0, mag: false, vx: 0, vy: 0 });
-    if (e.boss) items.push({ x: e.x + 14, y: e.y, kind: 'chest' });
+    if (e.boss) { items.push({ x: e.x + 14, y: e.y, kind: 'chest' }); items.push({ x: e.x - 14, y: e.y, kind: 'magnet' }); }
     else if (Math.random() < 0.035) items.push({ x: e.x, y: e.y + 6, kind: 'coin' });
     for (let i = 0; i < 3; i++) fx.push({ x: e.x, y: e.y, vx: rnd(-50, 50), vy: rnd(-70, -10), t: rnd(0.2, 0.4), c: e.type === 'rival' ? '#9a9ab0' : '#ffffff' });
     sfx.kill();
@@ -508,7 +519,7 @@
       if (p.hp > 0 && Math.hypot(p.x - x, p.y - y) < r + 9) {
         p.hp = 0;
         const roll = Math.random();
-        items.push({ x: p.x, y: p.y, kind: roll < 0.5 ? 'bowl' : 'coin' });
+        items.push({ x: p.x, y: p.y, kind: roll < 0.35 ? 'bowl' : roll < 0.65 ? 'coin' : 'magnet' });
         for (let i = 0; i < 5; i++) fx.push({ x: p.x, y: p.y, vx: rnd(-60, 60), vy: rnd(-90, -20), t: 0.4, c: '#ffb040' });
       }
     }
@@ -820,7 +831,7 @@
     enemies = enemies.filter(e => !e.dead);
 
     // ---- 宝石 ----
-    const pick = 58 * S.magnet;
+    const pick = 80 * S.magnet;
     for (const g of gems) {
       g.t += dt;
       const dx = P.x - g.x, dy = P.y - g.y, d = Math.hypot(dx, dy) || 1;
@@ -830,6 +841,7 @@
     }
     gems = gems.filter(g => !g.got);
     if (gems.length > 700) gems.splice(0, gems.length - 700);
+    if (gems.length > 160 && gt - (lastVac || 0) > 25) { lastVac = gt; for (const g of gems) g.mag = true; }
 
     // ---- アイテム ----
     for (const it of items) {
@@ -837,6 +849,7 @@
       if (d < 16 + 10 * S.magnet) {
         it.got = true;
         if (it.kind === 'coin') { coins += 10; sfx.coin(); }
+        else if (it.kind === 'magnet') { for (const g of gems) g.mag = true; banner = { text: '経験値を すいよせた！', t: 1.6, color: '#8ac8ff' }; sfx.heal(); }
         else if (it.kind === 'bowl') { P.hp = Math.min(P.maxHp, P.hp + 30); sfx.heal(); nums.push({ x: P.x, y: P.y - 20, v: '+30', t: 0.8, heal: true }); }
         else if (it.kind === 'chest') {
           sfx.chest();
@@ -981,7 +994,7 @@
     }
     for (const it of items) {
       const x = sx(it.x), y = sy(it.y) + Math.sin(performance.now() / 300) * 1.5;
-      drawSpr(g, it.kind === 'chest' ? SPR.chest : it.kind === 'bowl' ? SPR.bowl : SPR.coin[0], x, y, it.kind === 'coin' ? PX : PX);
+      drawSpr(g, it.kind === 'chest' ? SPR.chest : it.kind === 'bowl' ? SPR.bowl : it.kind === 'magnet' ? SPR.magnet : SPR.coin[0], x, y, PX);
     }
     // 敵（奥から手前の順）
     enemies.sort((a, b) => a.y - b.y);
