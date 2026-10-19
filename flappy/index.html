@@ -225,9 +225,11 @@
     if (state === 'over') {                 // 落として回転しながら落ちる
       hx += deadT * 60; hy += deadT * deadT * 500; ang = -0.5 + deadT * 9;
     } else {
-      const k = flapT / 0.22;               // 1→0
-      ang = -0.9 + (1 - k) * 0 + Math.sin((1 - k) * Math.PI) * 1.7 * (flapT > 0 ? 1 : 0);
-      if (flapT === 0) ang = -0.9 + Math.sin(performance.now() / 300) * 0.06;
+      // 上昇中は高速でパタパタ、落ちている間はゆっくりひらひら
+      const t = performance.now();
+      if (state === 'play' && (vy < 0 || flapT > 0)) ang = -0.35 + Math.sin(t / 38) * 0.75;
+      else if (state === 'play') ang = -0.7 + Math.sin(t / 150) * 0.25;
+      else ang = -0.9 + Math.sin(t / 300) * 0.06;
     }
     g.save();
     g.translate(hx, hy); g.rotate(ang);
