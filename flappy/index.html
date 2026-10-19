@@ -42,11 +42,11 @@
     { name: '序二段', from: 7, body: '#bfe4f6', belt: '#111111' },
     { name: '三段目', from: 12, body: '#c9eaa5', belt: '#111111' },
     { name: '幕下',   from: 18, body: '#f8cfe0', belt: '#111111' },
-    { name: '十両',   from: 25, body: '#ffd699', belt: '#e65100' },
-    { name: '前頭',   from: 33, body: '#dcc4f2', belt: '#6a1b9a' },
-    { name: '小結',   from: 42, body: '#ffb3a1', belt: '#b71c1c' },
-    { name: '関脇',   from: 52, body: '#b9e3d3', belt: '#7a4a00' },
-    { name: '大関',   from: 64, body: '#ff9a3c', belt: '#14507a' },
+    { name: '十両',   from: 26, body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 36, body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 48, body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 62, body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 78, body: '#ff9a3c', belt: '#14507a' },
     { name: '横綱',   from: 100, body: '#ffee00', belt: '#1f5c00' },
   ];
   const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
@@ -121,13 +121,13 @@
   const ctx = cv.getContext('2d');
   ctx.scale(cv.width / W, cv.height / H);
 
-  let state, y, vy, pipes, score, best, scroll, winT, deadT, shake;
+  let state, y, vy, pipes, score, best, scroll, winT, deadT, shake, flapT, popT, popMsg;
   try { best = +localStorage.getItem('sumo-flappy-best') || 0; } catch { best = 0; }
 
   function reset() {
     state = 'ready';
     y = H * 0.42; vy = 0;
-    pipes = []; score = 0; scroll = 0; winT = 0; deadT = 0; shake = 0;
+    pipes = []; score = 0; scroll = 0; winT = 0; deadT = 0; shake = 0; flapT = 0; popT = 0; popMsg = '';
     for (let i = 0; i < 3; i++) addPipe(W + 120 + i * SPACING);
   }
 
@@ -136,9 +136,11 @@
     pipes.push({ x, top: min + Math.random() * (max - min), passed: false });
   }
 
+  const POP = ['どすこい！', 'はっけよい！', 'のこった！', 'ふんっ！'];
+
   function flap() {
     if (state === 'ready') state = 'play';
-    if (state === 'play') vy = FLAP;
+    if (state === 'play') { vy = FLAP; flapT = 0.22; popT = 0.5; popMsg = POP[Math.floor(Math.random() * POP.length)]; }
     else if (state === 'over' && deadT > 0.6) reset();
   }
 
@@ -153,6 +155,8 @@
   // ---------- 更新 ----------
   function update(dt) {
     winT = Math.max(0, winT - dt);
+    flapT = Math.max(0, flapT - dt);
+    popT = Math.max(0, popT - dt);
     shake = Math.max(0, shake - dt);
     if (state === 'ready') { y = H * 0.42 + Math.sin(performance.now() / 250) * 8; scroll += SPEED * dt; return; }
     if (state === 'over') {
@@ -215,19 +219,36 @@
     g.fillStyle = color; g.fillText(s, x, yy);
   }
 
-  function drawBalloon(g, lv) {
-    const sway = state === 'play' ? Math.max(-12, Math.min(12, -vy * 0.025)) : 0;
-    let bx = PX + sway, by = y - 78;
-    if (state === 'over') { by -= deadT * 260; bx += Math.sin(deadT * 3) * 10; }
-    const sx = PX, sy = y - PLAYER_R + 4; // 力士の頭の上
-    g.strokeStyle = '#3a2a10'; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + bx) / 2 + 4, (sy + by) / 2, bx, by + 22); g.stroke();
-    g.fillStyle = '#e53935';
-    g.beginPath(); g.ellipse(bx, by, 19, 24, 0, 0, Math.PI * 2); g.fill();
-    g.beginPath(); g.moveTo(bx, by + 23); g.lineTo(bx - 4, by + 29); g.lineTo(bx + 4, by + 29); g.closePath(); g.fill();
-    g.lineWidth = 2.5; g.beginPath(); g.ellipse(bx, by, 19, 24, 0, 0, Math.PI * 2); g.stroke();
-    g.fillStyle = 'rgba(255,255,255,.55)';
-    g.beginPath(); g.ellipse(bx - 7, by - 9, 4, 7, -0.5, 0, Math.PI * 2); g.fill();
+  // 軍配（大きなうちわ）。あおいだ風で力士が浮く
+  function drawGunbai(g) {
+    let hx = PX + 20, hy = y + 6, ang;
+    if (state === 'over') {                 // 落として回転しながら落ちる
+      hx += deadT * 60; hy += deadT * deadT * 500; ang = -0.5 + deadT * 9;
+    } else {
+      const k = flapT / 0.22;               // 1→0
+      ang = -0.9 + (1 - k) * 0 + Math.sin((1 - k) * Math.PI) * 1.7 * (flapT > 0 ? 1 : 0);
+      if (flapT === 0) ang = -0.9 + Math.sin(performance.now() / 300) * 0.06;
+    }
+    g.save();
+    g.translate(hx, hy); g.rotate(ang);
+    g.fillStyle = '#7a4a1a'; g.fillRect(-3, 0, 6, 22);                       // 柄
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 2; g.strokeRect(-3, 0, 6, 22);
+    g.fillStyle = '#e8c27a';                                                  // 団扇面
+    g.beginPath(); g.ellipse(0, -22, 20, 26, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.fillStyle = '#c0392b';
+    g.beginPath(); g.arc(0, -22, 8, 0, Math.PI * 2); g.fill();               // 日の丸風の飾り
+    g.strokeStyle = 'rgba(122,74,26,.6)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(0, -48); g.lineTo(0, -2); g.stroke();
+    g.restore();
+    // あおいだ風
+    if (flapT > 0 && state === 'play') {
+      g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 3; g.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) {
+        const wy = y + PLAYER_R + 8 + (1 - flapT / 0.22) * 22;
+        g.beginPath(); g.moveTo(PX - 6 + i * 16, wy); g.lineTo(PX - 6 + i * 16 + 3, wy + 14); g.stroke();
+      }
+      g.lineCap = 'butt';
+    }
   }
 
   function drawHud(g, lv) {
@@ -256,10 +277,7 @@
     sky.addColorStop(0, '#f9efc9'); sky.addColorStop(1, '#f1d98f');
     g.fillStyle = sky; g.fillRect(-10, -10, W + 20, H + 20);
 
-    // 風船（柱の奥）。力士はこれにつかまって浮いている
     const lv = rankOf(score);
-    drawBalloon(g, lv);
-
     pipes.forEach(p => drawPipe(g, p));
 
     // 土俵（地面）
@@ -275,6 +293,12 @@
     const face = state === 'over' ? 'hit' : winT > 0 ? 'win' : 'normal';
     const ang = state === 'ready' ? 0 : Math.max(-0.15, Math.min(0.35, vy / 1500));
     drawSumo(g, lv, face, PX, y, ang);
+    drawGunbai(g);
+    if (popT > 0 && state === 'play') {
+      g.globalAlpha = Math.min(1, popT * 3);
+      text(g, popMsg, PX + 8, y - 44 - (0.5 - popT) * 30, 18, '#b71c1c');
+      g.globalAlpha = 1;
+    }
 
     // 上部バー: 位とスコア
     drawHud(g, lv);
@@ -282,7 +306,7 @@
 
     if (state === 'ready') {
       text(g, 'はなりきしフラッピー', W / 2, 220, 30);
-      text(g, 'タップで ふわっと上昇', W / 2, 460, 24);
+      text(g, 'タップで 軍配をあおぐ', W / 2, 460, 24);
       text(g, 'ベスト ' + best, W / 2, 500, 18);
     }
 
