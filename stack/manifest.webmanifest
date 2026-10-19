@@ -1,0 +1,17 @@
+{
+  "name": "はなりきしスタック",
+  "short_name": "スタック",
+  "description": "力士を乗せたブロックをぴったり積み上げて番付を上げるゲーム",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1d4a",
+  "theme_color": "#0b1d4a",
+  "lang": "ja",
+  "icons": [
+    { "src": "../parts/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "../parts/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "../parts/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
