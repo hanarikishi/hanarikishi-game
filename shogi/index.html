@@ -87,7 +87,7 @@
   }
 
   // ================= 将棋のルール =================
-  // 盤は 5x5。マスの値: 0=空、符号が持ち主（+が自分=下、-がCPU=上）、絶対値が駒
+  // 盤は 横5 x 縦8。マスの値: 0=空、符号が持ち主（+が自分=下、-がCPU=上）、絶対値が駒
   const P = 1, S = 2, G = 3, B = 4, R = 5, K = 6, PRO = 8;
   const NAME = { 1: '歩', 2: '銀', 3: '金', 4: '角', 5: '飛', 6: '玉', 9: 'と', 10: '全', 12: '馬', 13: '龍' };
   const LONG = { 1: '歩兵', 2: '銀将', 3: '金将', 4: '角行', 5: '飛車', 6: '玉将' };
@@ -99,29 +99,31 @@
     1: [[0], []], 2: [[0, 1, 7, 3, 5], []], 3: GOLD, 4: [[], [1, 3, 5, 7]], 5: [[], [0, 2, 4, 6]],
     6: [[0, 1, 2, 3, 4, 5, 6, 7], []], 9: GOLD, 10: GOLD, 12: [[0, 2, 4, 6], [1, 3, 5, 7]], 13: [[1, 3, 5, 7], [0, 2, 4, 6]],
   };
+  const N = 40;                 // マスの数（横5 x 縦8）
   const NB = [];
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < N; i++) {
     NB[i] = [];
     for (let d = 0; d < 8; d++) {
       const r = (i / 5 | 0) + DR[d], c = i % 5 + DC[d];
-      NB[i][d] = r < 0 || r > 4 || c < 0 || c > 4 ? -1 : r * 5 + c;
+      NB[i][d] = r < 0 || r > 7 || c < 0 || c > 4 ? -1 : r * 5 + c;
     }
   }
   const sgn = v => v > 0 ? 1 : v < 0 ? -1 : 0;
   const canPro = c => c === P || c === S || c === B || c === R;
-  const zone = (i, side) => side === 1 ? i < 5 : i >= 20;     // 一番奥の段
+  const zone = (i, side) => side === 1 ? i < 15 : i >= 25;    // 相手の陣地（奥の3段）。ここに入る・出ると成れる
+  const lastRow = (i, side) => side === 1 ? i < 5 : i >= 35;  // 一番奥の段（歩はここで必ず成る）
   const hi = side => side === 1 ? 0 : 1;
 
   // 指し手: { f: 元のマス（打つときは -1）, t: 行き先, p: 成るか, c: 打つ駒 }
-  function gen(st, side, out, capOnly) {
+  function gen(st, side, out, capOnly, noDrop) {
     const bd = st.bd;
     const add = (i, j, c) => {
       if (canPro(c) && (zone(i, side) || zone(j, side))) {
         out.push({ f: i, t: j, p: true });
-        if (!(c === P && zone(j, side))) out.push({ f: i, t: j, p: false });   // 歩は奥で必ず成る
+        if (!(c === P && lastRow(j, side))) out.push({ f: i, t: j, p: false });   // 歩は奥で必ず成る
       } else out.push({ f: i, t: j, p: false });
     };
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < N; i++) {
       const v = bd[i]; if (v * side <= 0) continue;
       const c = Math.abs(v), [stp, sl] = MOVES[c];
       for (const d0 of stp) {
@@ -138,14 +140,14 @@
         }
       }
     }
-    if (capOnly) return out;
+    if (capOnly || noDrop) return out;
     const h = st.h[hi(side)];
-    for (let c = 1; c <= 5; c++) if (h[c]) for (let j = 0; j < 25; j++) {
+    for (let c = 1; c <= 5; c++) if (h[c]) for (let j = 0; j < N; j++) {
       if (bd[j]) continue;
       if (c === P) {
-        if (zone(j, side)) continue;                                // 行き所のない歩
+        if (lastRow(j, side)) continue;                             // 行き所のない歩
         let nifu = false;
-        for (let k = j % 5; k < 25; k += 5) if (bd[k] === side * P) nifu = true;
+        for (let k = j % 5; k < N; k += 5) if (bd[k] === side * P) nifu = true;
         if (nifu) continue;                                          // 二歩
       }
       out.push({ f: -1, t: j, c });
@@ -170,7 +172,7 @@
   // ありうる並びをいくつか作って、それぞれで読んだ点数の平均で手を選ぶ
   function evaluate(st) {         // 下側(+)から見た点数
     let s = 0;
-    for (let i = 0; i < 25; i++) { const v = st.bd[i]; if (v) s += sgn(v) * VAL[Math.abs(v)]; }
+    for (let i = 0; i < N; i++) { const v = st.bd[i]; if (v) s += sgn(v) * VAL[Math.abs(v)]; }
     for (let c = 1; c <= 5; c++) s += (st.h[0][c] - st.h[1][c]) * VAL[c] * 0.9;
     return s;
   }
@@ -190,7 +192,7 @@
   const capVal = (st, m) => m.f >= 0 && st.bd[m.t] ? VAL[Math.abs(st.bd[m.t])] : 0;
   function search(st, side, depth, a, b) {
     if (depth === 0) return qsearch(st, side, a, b, 3);
-    const ms = gen(st, side, []);
+    const ms = gen(st, side, [], false, depth === 1);   // 読みの最後の1手では、駒を打つ手は読まない（速くするため）
     if (!ms.length) return -WIN;
     ms.sort((x, y) => capVal(st, y) - capVal(st, x));
     let best = -Infinity;
@@ -233,10 +235,10 @@
     if (!ms.length) return null;
     const boards = [];
     for (let s = 0; s < L.samples; s++) boards.push(sampleBoard(st, cands, counts));
-    const score = (m, depth) => boards.reduce((sum, sb) =>
-      sum + (takesKing(sb, m) ? WIN : -search(apply(sb, m, -1), 1, depth - 1, -Infinity, Infinity)), 0) / boards.length;
-    // 全部の手を浅く読み、よさそうな手だけを深く読む（速くするため）
-    let list = ms.map(m => ({ m, v: score(m, 1) }));
+    const score = (m, depth, bs = boards) => bs.reduce((sum, sb) =>
+      sum + (takesKing(sb, m) ? WIN : -search(apply(sb, m, -1), 1, depth - 1, -Infinity, Infinity)), 0) / bs.length;
+    // 全部の手を2つの並びだけで浅く読み、よさそうな手だけを全部の並びで深く読む（速くするため）
+    let list = ms.map(m => ({ m, v: score(m, 1, L.depth > 1 ? boards.slice(0, 2) : boards) }));
     if (L.depth > 1) {
       list.sort((x, y) => y.v - x.v);
       list = list.slice(0, L.depth > 2 ? 6 : 10).map(x => ({ m: x.m, v: score(x.m, L.depth) }));
@@ -261,7 +263,7 @@
       if (wasPro && !canPro(t)) continue;
       if (!canReach(wasPro ? t | PRO : t, a, b)) continue;
       if (nowPro && !canPro(t)) continue;
-      if (!nowPro && t === P && zone(b, 1)) continue;
+      if (!nowPro && t === P && lastRow(b, 1)) continue;
       m |= 1 << t;
     }
     return m || mask;
@@ -276,21 +278,24 @@
   const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
   let best = load(BEST_KEY), streak = load(RUN_KEY);
 
-  const BX = 210, BY = 300, CELL = 74;
-  const cellX = i => BX + (i % 5 - 2) * CELL, cellY = i => BY + ((i / 5 | 0) - 2) * CELL;
-  const MAX_PLY = 200;                 // 100手ずつで決着しなければ引き分け
+  const BX = 210, BY = 350, CELL = 58;
+  const cellX = i => BX + (i % 5 - 2) * CELL, cellY = i => BY + ((i / 5 | 0) - 3.5) * CELL;
+  const MAX_PLY = 300;                 // 150手ずつで決着しなければ引き分け
   const ALL = 0b1111110;               // 歩〜玉 のどれでもありうる
 
   let scene = 'title', t = 0;
   // pcs: 盤上の駒 { side, c(成りも含む), cell, x, y, cand(CPUから見たありうる駒) }
   let pcs, hands, turn, sel, targets, promo, busy, ply, banner, lastMove, result, thinking, after, ghosts;
 
-  const DEFAULT_SETUP = [[24, K], [23, G], [22, S], [21, B], [20, R], [19, P]];
+  const MY_CAMP = [25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39];   // 下の3段
+  const DEFAULT_SETUP = [[37, K], [38, G], [36, S], [39, B], [35, R], [30, P], [31, P], [32, P], [33, P], [34, P]];   // 1人10枚（歩は5枚）
+  const shuffled = a => a.slice().sort(() => Math.random() - 0.5);
   function randomCpuSetup() {
-    // CPU の陣形: 玉は一番奥、ほかは上2段のどこか
+    // CPU の陣形: 玉は一番奥、歩は前の2段のどこか、ほかは上3段の残り
     const k = Math.floor(Math.random() * 5);
-    const rest = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].filter(c => c !== k).sort(() => Math.random() - 0.5);
-    return [[k, K], [rest[0], R], [rest[1], B], [rest[2], G], [rest[3], S], [rest[4], P]];
+    const pawns = shuffled([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]).slice(0, 5);
+    const rest = shuffled([...Array(15).keys()].filter(c => c !== k && !pawns.includes(c)));
+    return [[k, K], [rest[0], R], [rest[1], B], [rest[2], G], [rest[3], S], ...pawns.map(c => [c, P])];
   }
   const mkPiece = (side, c, cell, cand) => ({ side, c, cell, x: cellX(cell), y: cellY(cell), cand, hit: 0 });
 
@@ -304,7 +309,7 @@
     scene = 'setup';
   }
   function shuffleSetup() {
-    const cells = [15, 16, 17, 18, 19, 20, 21, 22, 23, 24].sort(() => Math.random() - 0.5);
+    const cells = shuffled(MY_CAMP);
     pcs.filter(p => p.side === 1).forEach((p, i) => { p.cell = cells[i]; });
     sel = null;
   }
@@ -312,7 +317,7 @@
 
   const pieceAt = i => pcs.find(p => p.cell === i);
   const state = () => {
-    const bd = new Array(25).fill(0);
+    const bd = new Array(N).fill(0);
     pcs.forEach(p => { bd[p.cell] = p.side * p.c; });
     return { bd, h: hands };
   };
@@ -380,9 +385,9 @@
 
   // ================= 入力 =================
   let buttons = [];
-  const HAND_Y = { 1: 524, '-1': 78 };
+  const HAND_Y = { 1: 624, '-1': 80 };
   function hitCell(x, y) {
-    for (let i = 0; i < 25; i++) if (Math.abs(x - cellX(i)) < CELL / 2 && Math.abs(y - cellY(i)) < CELL / 2) return i;
+    for (let i = 0; i < N; i++) if (Math.abs(x - cellX(i)) < CELL / 2 && Math.abs(y - cellY(i)) < CELL / 2) return i;
     return -1;
   }
   function handChips(side) {     // 持ち駒の並び（表示とタップの両方で使う）
@@ -397,7 +402,7 @@
     if (promo) return;
     const c = hitCell(x, y);
     if (scene === 'setup') {
-      if (c < 15) { sel = null; return; }
+      if (c < 25) { sel = null; return; }
       const p = pieceAt(c);
       if (sel) {
         const sp = pieceAt(sel.cell);
@@ -464,50 +469,51 @@
   }
 
   function drawBoard(g) {
-    const x0 = BX - CELL * 2.5, y0 = BY - CELL * 2.5, S5 = CELL * 5;
-    rrect(g, x0 - 10, y0 - 10, S5 + 20, S5 + 20, 14); g.fillStyle = '#c99d5c'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#8a6630'; g.stroke();
-    g.fillStyle = '#ecd3a0'; g.fillRect(x0, y0, S5, S5);
-    // 成れる段
-    g.fillStyle = 'rgba(216,71,58,.08)'; g.fillRect(x0, y0, S5, CELL);
-    g.fillStyle = 'rgba(58,111,216,.08)'; g.fillRect(x0, y0 + CELL * 4, S5, CELL);
-    if (scene === 'setup') { g.fillStyle = 'rgba(255,220,80,.3)'; g.fillRect(x0, y0 + CELL * 3, S5, CELL * 2); }
+    const x0 = BX - CELL * 2.5, y0 = BY - CELL * 4, BW = CELL * 5, BH = CELL * 8;
+    rrect(g, x0 - 10, y0 - 10, BW + 20, BH + 20, 14); g.fillStyle = '#c99d5c'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#8a6630'; g.stroke();
+    g.fillStyle = '#ecd3a0'; g.fillRect(x0, y0, BW, BH);
+    // それぞれの陣地（3段）
+    g.fillStyle = 'rgba(58,111,216,.08)'; g.fillRect(x0, y0, BW, CELL * 3);
+    g.fillStyle = 'rgba(216,71,58,.08)'; g.fillRect(x0, y0 + CELL * 5, BW, CELL * 3);
+    if (scene === 'setup') { g.fillStyle = 'rgba(255,220,80,.3)'; g.fillRect(x0, y0 + CELL * 5, BW, CELL * 3); }
     if (lastMove) for (const c of [lastMove.f, lastMove.t]) if (c >= 0) {
       g.fillStyle = lastMove.side === 1 ? 'rgba(216,71,58,.16)' : 'rgba(58,111,216,.22)';
       g.fillRect(cellX(c) - CELL / 2, cellY(c) - CELL / 2, CELL, CELL);
     }
     g.strokeStyle = '#8a6630'; g.lineWidth = 1.5;
-    for (let k = 0; k <= 5; k++) {
-      g.beginPath(); g.moveTo(x0 + k * CELL, y0); g.lineTo(x0 + k * CELL, y0 + S5); g.stroke();
-      g.beginPath(); g.moveTo(x0, y0 + k * CELL); g.lineTo(x0 + S5, y0 + k * CELL); g.stroke();
-    }
+    for (let k = 0; k <= 5; k++) { g.beginPath(); g.moveTo(x0 + k * CELL, y0); g.lineTo(x0 + k * CELL, y0 + BH); g.stroke(); }
+    for (let k = 0; k <= 8; k++) { g.beginPath(); g.moveTo(x0, y0 + k * CELL); g.lineTo(x0 + BW, y0 + k * CELL); g.stroke(); }
+    // 陣地の境目に星
+    g.fillStyle = '#8a6630';
+    for (const k of [3, 5]) for (const j of [1, 4]) { g.beginPath(); g.arc(x0 + j * CELL, y0 + k * CELL, 3.5, 0, Math.PI * 2); g.fill(); }
   }
 
   // 自分の駒のまわりに、動ける向きのポチ（1マス）と棒（どこまでも）
   function drawDots(g, c, x, y, a = 1) {
     const [stp, sl] = MOVES[c];
     g.save(); g.globalAlpha = a; g.fillStyle = '#c62818'; g.strokeStyle = '#c62818'; g.lineCap = 'round';
-    for (const d of stp) { g.beginPath(); g.arc(x + DC[d] * 31, y + DR[d] * 31, 4.5, 0, Math.PI * 2); g.fill(); }
-    g.lineWidth = 6;
-    for (const d of sl) { g.beginPath(); g.moveTo(x + DC[d] * 25, y + DR[d] * 25); g.lineTo(x + DC[d] * 34, y + DR[d] * 34); g.stroke(); }
+    for (const d of stp) { g.beginPath(); g.arc(x + DC[d] * 24, y + DR[d] * 24, 3.6, 0, Math.PI * 2); g.fill(); }
+    g.lineWidth = 5;
+    for (const d of sl) { g.beginPath(); g.moveTo(x + DC[d] * 19, y + DR[d] * 19); g.lineTo(x + DC[d] * 27, y + DR[d] * 27); g.stroke(); }
     g.restore();
   }
   function nameChip(g, s, x, y, side) {
-    g.beginPath(); g.arc(x, y, 10, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill();
-    g.lineWidth = 2; g.strokeStyle = SIDE_COLOR[side]; g.stroke();
-    text(g, s, x, y + 1, 12, '#3a2a10', 'rgba(0,0,0,0)');
+    g.beginPath(); g.arc(x, y, 8, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill();
+    g.lineWidth = 1.5; g.strokeStyle = SIDE_COLOR[side]; g.stroke();
+    text(g, s, x, y + 1, 10, '#3a2a10', 'rgba(0,0,0,0)');
   }
 
   function drawPiece(g, p, a = 1, face = 'normal') {
-    const r = 22;
+    const r = 17;
     g.save(); g.globalAlpha = a * 0.75;
     g.beginPath(); g.ellipse(p.x, p.y + r * 0.8, r * 1.05, r * 0.38, 0, 0, Math.PI * 2); g.fillStyle = SIDE_COLOR[p.side]; g.fill();
     g.restore();
     if (a === 1 && sel && sel.cell === p.cell && p.side === 1) {
-      g.beginPath(); g.arc(p.x, p.y, r + 12, 0, Math.PI * 2); g.lineWidth = 4; g.strokeStyle = '#ffcf00'; g.stroke();
+      g.beginPath(); g.arc(p.x, p.y, r + 10, 0, Math.PI * 2); g.lineWidth = 3; g.strokeStyle = '#ffcf00'; g.stroke();
     }
     drawSumo(g, pieceFaces(p.side, p.c), face, p.x, p.y, r, a);
-    if (p.side === 1) { drawDots(g, p.c, p.x, p.y, a); nameChip(g, NAME[p.c], p.x + 18, p.y + 16, 1); }
-    else if (scene === 'result') nameChip(g, NAME[p.c], p.x + 18, p.y + 16, -1);   // 終わったら相手の駒を明かす
+    if (p.side === 1) { drawDots(g, p.c, p.x, p.y, a); nameChip(g, NAME[p.c], p.x + 14, p.y + 12, 1); }
+    else if (scene === 'result') nameChip(g, NAME[p.c], p.x + 14, p.y + 12, -1);   // 終わったら相手の駒を明かす
   }
 
   function drawPieces(g) {
@@ -524,8 +530,8 @@
     for (const m of targets) {
       if (seen.has(m.t)) continue; seen.add(m.t);
       const x = cellX(m.t), y = cellY(m.t);
-      if (pieceAt(m.t)) { g.beginPath(); g.arc(x, y, 33, 0, Math.PI * 2); g.lineWidth = 4; g.strokeStyle = 'rgba(230,40,30,.85)'; g.stroke(); }
-      else { g.beginPath(); g.arc(x, y, 11, 0, Math.PI * 2); g.fillStyle = 'rgba(60,170,80,.75)'; g.fill(); }
+      if (pieceAt(m.t)) { g.beginPath(); g.arc(x, y, 26, 0, Math.PI * 2); g.lineWidth = 3.5; g.strokeStyle = 'rgba(230,40,30,.85)'; g.stroke(); }
+      else { g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.fillStyle = 'rgba(60,170,80,.75)'; g.fill(); }
     }
   }
 
@@ -560,18 +566,18 @@
     drawBoard(g);
     drawTargets(g);
     drawPieces(g);
-    drawHands(g);
+    if (scene !== 'setup') drawHands(g);
     if (scene === 'setup') {
-      text(g, '下の2段で陣形を組もう', BX, 572, 19, '#b71c1c');
-      text(g, '駒をタップ → 置きたいマスをタップ（入れ替えもOK）', BX, 598, 13, '#6b5530');
-      button(g, 'おまかせ', '', 30, 622, 140, 52, '#fff', shuffleSetup);
-      button(g, 'この陣形で始める', '', 186, 622, 204, 52, '#9dffb0', startGame, 19);
+      text(g, '下の3段で陣形を組もう', BX, 80, 19, '#b71c1c');
+      text(g, '駒をタップ → 置きたいマスをタップ（入れ替えもOK）', BX, 612, 13, '#6b5530');
+      button(g, 'おまかせ', '', 30, 636, 140, 48, '#fff', shuffleSetup);
+      button(g, 'この陣形で始める', '', 186, 636, 204, 48, '#9dffb0', startGame, 19);
       return;
     }
     if (scene === 'play') {
       const msg = thinking ? 'CPUが考え中…' : busy > 0 ? '' : human() ? 'あなたの番' : '';
-      if (msg) text(g, msg, BX, 590, 22, human() ? '#c62818' : '#2350b0');
-      if (human() && !sel && ply < 2 && !busy) text(g, 'ポチ＝1マス動ける向き　棒＝どこまでも進める向き', BX, 625, 12, '#6b5530');
+      if (msg) text(g, msg, BX, 664, 20, human() ? '#c62818' : '#2350b0');
+      if (human() && !sel && ply < 2 && !busy) text(g, 'ポチ＝1マス動ける向き　棒＝どこまでも進める向き', BX, 688, 12, '#6b5530');
     }
     if (banner) {
       const k = Math.min(1, banner.t * 6), s = 1 + (1 - k) * 0.6, a = Math.min(1, (1.4 - banner.t) * 4);
@@ -596,7 +602,7 @@
     g.fillStyle = 'rgba(58,42,16,.5)'; g.fillRect(0, 0, W, H);
     rrect(g, 30, 150, W - 60, 400, 22); g.fillStyle = '#fff8dc'; g.fill(); g.lineWidth = 4; g.strokeStyle = '#3a2a10'; g.stroke();
     let title, lines = [], btn;
-    const how = r.how === 'king' ? (r.winner === 1 ? '相手の玉を取った' : '玉を取られた') : r.how === 'stuck' ? '動ける手がなくなった' : '200手で引き分け';
+    const how = r.how === 'king' ? (r.winner === 1 ? '相手の玉を取った' : '玉を取られた') : r.how === 'stuck' ? '動ける手がなくなった' : '300手で引き分け';
     if (r.winner === 1) {
       title = '勝ち！'; lines.push(how);
       if (rankOfStreak(r.to) > rankOfStreak(r.from)) lines.push(`${RANKS[rankOfStreak(r.from)].name} → ${RANKS[rankOfStreak(r.to)].name} に昇進！`);
@@ -633,7 +639,7 @@
     const rr = RANKS[rankOfStreak(streak)];
     button(g, '対局する（CPU）', `いま ${rr.name}・${streak}連勝 ／ 最高 ${best}連勝`, 60, 380, W - 120, 68, '#ffe08a', newSetup);
     button(g, 'あそびかた', '', 60, 470, W - 120, 52, '#fff', () => { scene = 'rules'; });
-    text(g, '5×5の将棋。相手の駒は何か分からない！', W / 2, 570, 15, '#6b5530');
+    text(g, '5×8の将棋。相手の駒は何か分からない！', W / 2, 570, 15, '#6b5530');
     text(g, '勝つたびに番付が上がり、CPUも強くなる', W / 2, 598, 14, '#6b5530');
   }
 
@@ -641,15 +647,15 @@
     g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
     text(g, 'あそびかた', W / 2, 46, 30, '#b71c1c');
     const L = [
-      ['盤と駒', '5×5の盤。駒は 玉・飛・角・金・銀・歩'],
-      ['', 'の6枚ずつ。動き方はふつうの将棋と同じ。'],
-      ['陣形', '始める前に、下の2段へ自由に並べる。'],
+      ['盤と駒', '横5×縦8の盤。駒は 玉・飛・角・金・銀'],
+      ['', 'と歩5枚の10枚ずつ。動きは将棋と同じ。'],
+      ['陣形', '始める前に、下の3段へ自由に並べる。'],
       ['見えない', '相手の駒はみんな同じはなりきし。'],
       ['', '何の駒かは、動きを見て推理しよう。'],
       ['ポチ', '自分の駒のまわりのポチ＝1マス動ける向き、'],
       ['', '棒＝どこまでも進める向き。'],
       ['持ち駒', '取った駒は打てる（二歩はだめ）。'],
-      ['成り', '一番奥の段に入る・出るときに成れる。'],
+      ['成り', '相手の陣地（奥の3段）に入る・出ると成れる。'],
       ['', '成った駒は体が赤くなる（相手のも）。'],
       ['勝ち', '王手はなし。相手の玉を取ったら勝ち！'],
       ['', '自分の玉も、取られないように守ろう。'],

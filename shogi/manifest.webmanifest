@@ -1,7 +1,7 @@
 {
   "name": "はなりきし将棋",
   "short_name": "将棋",
-  "description": "5×5の将棋。相手の駒は何か分からない",
+  "description": "5×8の将棋。相手の駒は何か分からない",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

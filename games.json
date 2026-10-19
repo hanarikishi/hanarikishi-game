@@ -2,7 +2,7 @@
   {
     "id": "shogi",
     "title": "はなりきし将棋",
-    "desc": "5×5の将棋。相手の駒は何か分からない",
+    "desc": "5×8の将棋。相手の駒は何か分からない",
     "path": "shogi/",
     "thumb": "thumbs/shogi.jpg",
     "tags": ["ボード"],
