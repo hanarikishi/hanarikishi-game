@@ -1,5 +1,5 @@
 // オフラインでも遊べるようにキャッシュする。更新したら VERSION を上げる。
-const VERSION = 'flappy-v7';
+const VERSION = 'flappy-v8';
 const FILES = [
   './', './index.html', './manifest.webmanifest',
   '../parts/body_color.png', '../parts/mawashi.png', '../parts/body_line.png',
@@ -16,5 +16,12 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request)));
+  // ネット優先: 常に最新を取りに行き、成功したらキャッシュを更新。オフライン時だけキャッシュを使う
+  e.respondWith(
+    fetch(e.request).then(res => {
+      const copy = res.clone();
+      caches.open(VERSION).then(c => c.put(e.request, copy));
+      return res;
+    }).catch(() => caches.match(e.request))
+  );
 });
