@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>はなりきしフラッピー</title>
+<link rel="icon" href="../parts/icon-192.png">
+<link rel="apple-touch-icon" href="../parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f6e7b8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #e9d79c; display: flex; justify-content: center; align-items: center;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  canvas {
+    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    box-shadow: 0 0 30px rgba(60, 40, 0, .3); touch-action: none; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="840" height="1400"></canvas>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- 定義 ----------
+  const W = 420, H = 700;
+  const GROUND_H = 70, GROUND_Y = H - GROUND_H;
+
+  const RANKS = [
+    // name, この得点から, 体の色, まわしの色
+    { name: '前相撲', from: 0,  body: '#f1efe8', belt: '#111111' },
+    { name: '序の口', from: 2,  body: '#f7e3bd', belt: '#111111' },
+    { name: '序二段', from: 4,  body: '#bfe4f6', belt: '#111111' },
+    { name: '三段目', from: 7,  body: '#c9eaa5', belt: '#111111' },
+    { name: '幕下',   from: 10, body: '#f8cfe0', belt: '#111111' },
+    { name: '十両',   from: 14, body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 19, body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 25, body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 32, body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 40, body: '#ff9a3c', belt: '#14507a' },
+    { name: '横綱',   from: 50, body: '#ffee00', belt: '#1f5c00' },
+  ];
+  const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
+
+  const GRAVITY = 1500, FLAP = -430, SPEED = 140;
+  const GAP = 175, SPACING = 215, PIPE_W = 64;
+  const PLAYER_R = 24;
+  const PX = 110; // 力士の横位置
+
+  // ---------- 画像 ----------
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
+  const IMG = {};
+  const CX = 513, CY = 538, BODY_R = 395;
+
+  function loadImages() {
+    return Promise.all(SRC.map(n => new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => { IMG[n] = i; res(); };
+      i.onerror = () => rej(new Error('画像を読み込めません: ' + n));
+      i.src = `../parts/${n}.png`;
+    })));
+  }
+
+  function tint(img, color) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 1024;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = color;
+    g.fillRect(0, 0, 1024, 1024);
+    return c;
+  }
+
+  const DPR = 2;
+  const SCALE = PLAYER_R / BODY_R;
+  const sprites = []; // sprites[level][face]
+  function buildSprites() {
+    const size = Math.ceil(1024 * SCALE * DPR);
+    RANKS.forEach(rk => {
+      const bodyT = tint(IMG.body_color, rk.body);
+      const beltT = tint(IMG.mawashi, rk.belt);
+      const faces = {};
+      for (const face of ['normal', 'hit', 'win']) {
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const g = c.getContext('2d');
+        g.imageSmoothingQuality = 'high';
+        const d = im => g.drawImage(im, 0, 0, size, size);
+        d(bodyT); d(beltT); d(IMG.body_line);
+        d(face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win);
+        faces[face] = c;
+      }
+      sprites.push(faces);
+    });
+  }
+
+  function drawSumo(g, lv, face, x, y, angle) {
+    const cv = sprites[lv][face];
+    const w = cv.width / DPR;
+    g.save();
+    g.translate(x, y);
+    g.rotate(angle);
+    g.drawImage(cv, -CX * SCALE, -CY * SCALE, w, w);
+    g.restore();
+  }
+
+  // ---------- 状態 ----------
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+
+  let state, y, vy, pipes, score, best, scroll, winT, deadT, shake;
+  try { best = +localStorage.getItem('sumo-flappy-best') || 0; } catch { best = 0; }
+
+  function reset() {
+    state = 'ready';
+    y = H * 0.42; vy = 0;
+    pipes = []; score = 0; scroll = 0; winT = 0; deadT = 0; shake = 0;
+    for (let i = 0; i < 3; i++) addPipe(W + 120 + i * SPACING);
+  }
+
+  function addPipe(x) {
+    const min = 90, max = GROUND_Y - GAP - 90;
+    pipes.push({ x, top: min + Math.random() * (max - min), passed: false });
+  }
+
+  function flap() {
+    if (state === 'ready') state = 'play';
+    if (state === 'play') vy = FLAP;
+    else if (state === 'over' && deadT > 0.6) reset();
+  }
+
+  function die() {
+    state = 'over'; deadT = 0; shake = 0.3;
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem('sumo-flappy-best', best); } catch {}
+    }
+  }
+
+  // ---------- 更新 ----------
+  function update(dt) {
+    winT = Math.max(0, winT - dt);
+    shake = Math.max(0, shake - dt);
+    if (state === 'ready') { y = H * 0.42 + Math.sin(performance.now() / 250) * 8; scroll += SPEED * dt; return; }
+    if (state === 'over') {
+      deadT += dt;
+      if (y < GROUND_Y - PLAYER_R) { vy += GRAVITY * dt; y = Math.min(y + vy * dt, GROUND_Y - PLAYER_R); }
+      return;
+    }
+
+    vy += GRAVITY * dt;
+    y += vy * dt;
+    scroll += SPEED * dt;
+    for (const p of pipes) p.x -= SPEED * dt;
+    if (pipes[0].x + PIPE_W < -10) { pipes.shift(); addPipe(pipes[pipes.length - 1].x + SPACING); }
+
+    for (const p of pipes) {
+      if (!p.passed && p.x + PIPE_W < PX - PLAYER_R) {
+        p.passed = true;
+        const before = rankOf(score);
+        score++;
+        if (rankOf(score) > before) winT = 1.2;
+      }
+    }
+
+    // 当たり判定（円と長方形）。少し甘めに
+    const r = PLAYER_R * 0.85;
+    if (y + r >= GROUND_Y || y - r <= 0) return die();
+    for (const p of pipes) {
+      const rects = [[p.x, 0, PIPE_W, p.top], [p.x, p.top + GAP, PIPE_W, GROUND_Y - p.top - GAP]];
+      for (const [rx, ry, rw, rh] of rects) {
+        const nx = Math.max(rx, Math.min(PX, rx + rw));
+        const ny = Math.max(ry, Math.min(y, ry + rh));
+        if ((PX - nx) ** 2 + (y - ny) ** 2 < r * r) return die();
+      }
+    }
+  }
+
+  // ---------- 描画 ----------
+  function drawPipe(g, p) {
+    const bale = (x, yy, w, h) => {
+      g.fillStyle = '#c8a25a'; g.fillRect(x, yy, w, h);
+      g.fillStyle = '#9c7a35';
+      for (let i = 1; i < 3; i++) g.fillRect(x, yy + h * i / 3 - 2, w, 4);
+      g.strokeStyle = '#3a2a10'; g.lineWidth = 2.5; g.strokeRect(x, yy, w, h);
+    };
+    const col = (yy, h) => {
+      const n = Math.max(1, Math.round(h / 34));
+      const bh = h / n;
+      for (let i = 0; i < n; i++) bale(p.x, yy + i * bh, PIPE_W, bh);
+    };
+    col(0, p.top);
+    col(p.top + GAP, GROUND_Y - p.top - GAP);
+  }
+
+  function text(g, s, x, yy, size, color = '#3a2a10', stroke = '#fff8dc') {
+    g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = size / 5;
+    g.strokeStyle = stroke; g.strokeText(s, x, yy);
+    g.fillStyle = color; g.fillText(s, x, yy);
+  }
+
+  function draw() {
+    const g = ctx;
+    g.save();
+    if (shake > 0) g.translate((Math.random() - .5) * 8, (Math.random() - .5) * 8);
+
+    // 背景
+    const sky = g.createLinearGradient(0, 0, 0, GROUND_Y);
+    sky.addColorStop(0, '#f9efc9'); sky.addColorStop(1, '#f1d98f');
+    g.fillStyle = sky; g.fillRect(-10, -10, W + 20, H + 20);
+
+    pipes.forEach(p => drawPipe(g, p));
+
+    // 土俵（地面）
+    g.fillStyle = '#d9b36a'; g.fillRect(0, GROUND_Y, W, GROUND_H);
+    g.fillStyle = '#b88d3e'; g.fillRect(0, GROUND_Y, W, 6);
+    g.fillStyle = '#c8a25a';
+    const off = -(scroll % 40);
+    for (let x = off; x < W; x += 40) g.fillRect(x, GROUND_Y + 22, 20, 8);
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, GROUND_Y); g.lineTo(W, GROUND_Y); g.stroke();
+
+    // 力士
+    const lv = rankOf(score);
+    const face = state === 'over' ? 'hit' : winT > 0 ? 'win' : 'normal';
+    const ang = state === 'ready' ? 0 : Math.max(-0.5, Math.min(1.1, vy / 700));
+    drawSumo(g, lv, face, PX, y, ang);
+
+    // HUD
+    if (state !== 'over') {
+      text(g, String(score), W / 2, 70, 56);
+      text(g, RANKS[lv].name, W / 2, 112, 22);
+    }
+    if (winT > 0) text(g, '出世！ ' + RANKS[lv].name, W / 2, 170, 30, '#b71c1c');
+
+    if (state === 'ready') {
+      text(g, 'はなりきしフラッピー', W / 2, 220, 30);
+      text(g, 'タップで ジャンプ', W / 2, 460, 24);
+      text(g, 'ベスト ' + best, W / 2, 500, 18);
+    }
+
+    if (state === 'over') {
+      g.fillStyle = 'rgba(58,42,16,.45)'; g.fillRect(0, 0, W, H);
+      g.drawImage(IMG.home, W / 2 - 100, 130, 200, 200);
+      text(g, 'ざんねん！', W / 2, 360, 36);
+      text(g, `${score} 回  ${RANKS[lv].name}`, W / 2, 415, 28);
+      text(g, `ベスト ${best}`, W / 2, 455, 20);
+      if (deadT > 0.6) text(g, 'タップで もういちど', W / 2, 520, 22, '#1f5c00');
+    }
+    g.restore();
+  }
+
+  // ---------- ループ・入力 ----------
+  let last = 0;
+  function frame(t) {
+    const dt = Math.min(0.033, (t - last) / 1000 || 0);
+    last = t;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); flap(); });
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (!e.repeat) flap(); }
+  });
+
+  loadImages().then(() => {
+    buildSprites();
+    reset();
+    requestAnimationFrame(frame);
+  }).catch(err => { document.body.textContent = err.message; });
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,11 +1,11 @@
 // オフラインでも遊べるようにキャッシュする。更新したら VERSION を上げる。
-const VERSION = 'hanarikishi-v5';
+const VERSION = 'hanarikishi-v6';
 const FILES = [
   './', './index.html', './matter.min.js', './manifest.webmanifest',
-  './parts/body_color.png', './parts/mawashi.png', './parts/body_line.png',
-  './parts/normal.png', './parts/collision.png',
-  './parts/win.png', './parts/home.png',
-  './parts/icon-192.png', './parts/icon-512.png', './parts/icon-maskable-512.png',
+  '../parts/body_color.png', '../parts/mawashi.png', '../parts/body_line.png',
+  '../parts/normal.png', '../parts/collision.png',
+  '../parts/win.png', '../parts/home.png',
+  '../parts/icon-192.png', '../parts/icon-512.png', '../parts/icon-maskable-512.png',
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
