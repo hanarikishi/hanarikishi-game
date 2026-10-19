@@ -52,6 +52,8 @@
   const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
 
   const GRAVITY = 1500, FLAP = -430, SPEED = 140;
+  const SPEED_UP = 2.5, SPEED_MAX = 240; // 1点ごとに少しずつ加速（上限あり）
+  const curSpeed = () => Math.min(SPEED_MAX, SPEED + score * SPEED_UP);
   const GAP = 175, SPACING = 215, PIPE_W = 64;
   const PLAYER_R = 24;
   const PX = 110; // 力士の横位置
@@ -161,8 +163,9 @@
 
     vy += GRAVITY * dt;
     y += vy * dt;
-    scroll += SPEED * dt;
-    for (const p of pipes) p.x -= SPEED * dt;
+    const sp = curSpeed();
+    scroll += sp * dt;
+    for (const p of pipes) p.x -= sp * dt;
     if (pipes[0].x + PIPE_W < -10) { pipes.shift(); addPipe(pipes[pipes.length - 1].x + SPACING); }
 
     for (const p of pipes) {
