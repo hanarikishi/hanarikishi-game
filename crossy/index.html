@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>はなりきしクロッシー</title>
+<link rel="icon" href="../parts/icon-192.png">
+<link rel="apple-touch-icon" href="../parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f6e7b8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #e9d79c; display: flex; justify-content: center; align-items: center;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  canvas {
+    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    box-shadow: 0 0 30px rgba(60, 40, 0, .3); touch-action: none; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="840" height="1400"></canvas>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- 定義 ----------
+  const W = 420, H = 700;
+  const TILE = 42, COLS = W / TILE;          // 10列
+  const BASE_Y = H * 0.7;                    // カメラ行の画面上の高さ
+  const HUD_H = 58;
+
+  const RANKS = [
+    { name: '前相撲', from: 0,   body: '#f1efe8', belt: '#111111' },
+    { name: '序の口', from: 3,   body: '#f7e3bd', belt: '#111111' },
+    { name: '序二段', from: 7,   body: '#bfe4f6', belt: '#111111' },
+    { name: '三段目', from: 12,  body: '#c9eaa5', belt: '#111111' },
+    { name: '幕下',   from: 18,  body: '#f8cfe0', belt: '#111111' },
+    { name: '十両',   from: 26,  body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 36,  body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 48,  body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 62,  body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 78,  body: '#ff9a3c', belt: '#14507a' },
+    { name: '横綱',   from: 100, body: '#ffee00', belt: '#1f5c00' },
+  ];
+  const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
+
+  const HOP = 0.12;                // 1マス進む時間
+  const PLAYER_R = 17;
+  const PERIOD = W + 300;          // 乗り物が一周する長さ（画面外の余白込み）
+  const CAR_COLORS = ['#e53935', '#1e88e5', '#fdd835', '#8e24aa', '#43a047', '#fb8c00'];
+
+  // ---------- 画像 ----------
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
+  const IMG = {};
+  const CX = 513, CY = 538, BODY_R = 395;
+
+  function loadImages() {
+    return Promise.all(SRC.map(n => new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => { IMG[n] = i; res(); };
+      i.onerror = () => rej(new Error('画像を読み込めません: ' + n));
+      i.src = `../parts/${n}.png`;
+    })));
+  }
+
+  function tint(img, color) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 1024;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = color;
+    g.fillRect(0, 0, 1024, 1024);
+    return c;
+  }
+
+  const DPR = 2;
+  const SCALE = PLAYER_R / BODY_R;
+  const sprites = [];
+  function buildSprites() {
+    const size = Math.ceil(1024 * SCALE * DPR);
+    RANKS.forEach(rk => {
+      const bodyT = tint(IMG.body_color, rk.body);
+      const beltT = tint(IMG.mawashi, rk.belt);
+      const faces = {};
+      for (const face of ['normal', 'hit', 'win']) {
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const g = c.getContext('2d');
+        g.imageSmoothingQuality = 'high';
+        const d = im => g.drawImage(im, 0, 0, size, size);
+        d(bodyT); d(beltT); d(IMG.body_line);
+        d(face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win);
+        faces[face] = c;
+      }
+      sprites.push(faces);
+    });
+  }
+
+  function drawSumo(g, lv, face, x, y, sx = 1, sy = 1) {
+    const cv = sprites[lv][face];
+    const w = cv.width / DPR;
+    g.save();
+    g.translate(x, y);
+    g.scale(sx, sy);
+    g.drawImage(cv, -CX * SCALE, -CY * SCALE, w, w);
+    g.restore();
+  }
+
+  // ---------- コース生成 ----------
+  const lanes = new Map();   // 行番号 -> レーン
+  let genRow = 0, lastType = 'grass', runLen = 0, lastDir = 1;
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  function makeLane(r) {
+    let type;
+    if (r < 3) type = 'grass';
+    else if (lastType === 'grass') type = (r >= 6 && Math.random() < 0.4) ? 'river' : 'road';
+    else if (runLen < 3 && Math.random() < 0.55) type = lastType;
+    else type = 'grass';
+    runLen = type === lastType ? runLen + 1 : 1;
+    lastType = type;
+
+    const lane = { type, r, objs: [], trees: [], dir: 1, speed: 0 };
+    const diff = Math.min(1, r / 120);
+
+    if (type === 'grass') {
+      if (r >= 3) {
+        for (let c = 0; c < COLS; c++) {
+          if (Math.random() < 0.16) lane.trees[c] = Math.random() < 0.7 ? 'pine' : 'rock';
+        }
+      }
+      return lane;
+    }
+
+    lane.dir = lastDir = -lastDir;
+    if (type === 'road') {
+      lane.speed = rnd(70, 120) + diff * 90;
+      const n = 3 + Math.floor(Math.random() * (2 + diff * 2));
+      const slot = PERIOD / n;
+      for (let i = 0; i < n; i++) {
+        const truck = n <= 4 && Math.random() < 0.3;
+        lane.objs.push({
+          x: i * slot + rnd(-slot * 0.1, slot * 0.1) - 150,
+          w: truck ? 96 : 56, kind: truck ? 'truck' : 'car',
+          color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
+        });
+      }
+    } else {
+      lane.speed = rnd(40, 70) + diff * 50;
+      const n = 3;
+      const slot = PERIOD / n;
+      for (let i = 0; i < n; i++) {
+        const tiles = 2 + Math.floor(Math.random() * 2);
+        lane.objs.push({ x: i * slot + rnd(-slot * 0.12, slot * 0.12) - 150, w: TILE * tiles, kind: 'raft' });
+      }
+    }
+    return lane;
+  }
+
+  function ensureLanes(upTo) {
+    while (genRow <= upTo) { lanes.set(genRow, makeLane(genRow)); genRow++; }
+  }
+
+  function laneAt(r) { ensureLanes(r); return lanes.get(r); }
+
+  // ---------- 状態 ----------
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+
+  let state, pr, px, hop, queued, camRow, creepRow, score, best, winT, deadT, deadKind, popT, popMsg, started;
+  try { best = +localStorage.getItem('sumo-crossy-best') || 0; } catch { best = 0; }
+
+  const POP = ['どすこい！', 'はっけよい！', 'のこった！', 'ふんっ！'];
+
+  function reset() {
+    lanes.clear(); genRow = 0; lastType = 'grass'; runLen = 0; lastDir = 1;
+    state = 'ready'; started = false;
+    pr = 0; px = Math.floor(COLS / 2) * TILE + TILE / 2;
+    hop = null; queued = null;
+    camRow = 0; creepRow = 0; score = 0; winT = 0; deadT = 0; deadKind = ''; popT = 0; popMsg = '';
+    ensureLanes(24);
+  }
+
+  const snapX = x => Math.max(0, Math.min(COLS - 1, Math.round((x - TILE / 2) / TILE))) * TILE + TILE / 2;
+
+  function tryMove(dx, dr) {
+    if (state === 'over') { if (deadT > 0.6) reset(); return; }
+    if (hop) { queued = [dx, dr]; return; }
+    if (state === 'ready') { state = 'play'; started = true; }
+
+    const toR = pr + dr;
+    if (toR < 0) return;
+    const lane = laneAt(toR);
+    const curLane = laneAt(pr);
+    let toX;
+    if (dr !== 0) toX = lane.type === 'river' ? px : snapX(px);
+    else {
+      toX = (curLane.type === 'river' ? px : snapX(px)) + dx * TILE;
+      if (toX < TILE / 2 - 1 || toX > W - TILE / 2 + 1) return;
+    }
+    if (lane.type === 'grass') {
+      const c = Math.floor(toX / TILE);
+      if (lane.trees[c]) return;       // 木や岩でふさがっている
+    }
+    hop = { t: 0, fx: px, fr: pr, tx: toX, tr: toR };
+    popT = dr > 0 ? 0.45 : 0; popMsg = POP[Math.floor(Math.random() * POP.length)];
+  }
+
+  function die(kind) {
+    if (state === 'over') return;
+    state = 'over'; deadT = 0; deadKind = kind; hop = null; queued = null;
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem('sumo-crossy-best', best); } catch {}
+    }
+  }
+
+  // ---------- 更新 ----------
+  function update(dt) {
+    winT = Math.max(0, winT - dt);
+    popT = Math.max(0, popT - dt);
+
+    for (const lane of lanes.values()) {
+      for (const o of lane.objs) {
+        o.x += lane.dir * lane.speed * dt;
+        if (o.x > W + 150) o.x -= PERIOD;
+        else if (o.x < -150) o.x += PERIOD;
+      }
+    }
+
+    if (state === 'over') { deadT += dt; return; }
+    if (state === 'ready') return;
+
+    // ホップ
+    if (hop) {
+      hop.t += dt / HOP;
+      if (hop.t >= 1) {
+        px = hop.tx; pr = hop.tr; hop = null;
+        if (pr > score) {
+          const before = rankOf(score);
+          score = pr;
+          if (rankOf(score) > before) winT = 1.2;
+        }
+        if (queued) { const q = queued; queued = null; tryMove(q[0], q[1]); }
+      }
+    }
+
+    // 川：筏に乗っていないと落ちる。乗っていれば流される
+    if (!hop) {
+      const lane = laneAt(pr);
+      if (lane.type === 'river') {
+        const raft = lane.objs.find(o => Math.abs(px - o.x) < o.w / 2 + 2);
+        if (!raft) return die('water');
+        px += lane.dir * lane.speed * dt;
+        if (px < 4 || px > W - 4) return die('water');
+      }
+    }
+
+    // 車との当たり判定
+    const effR = hop ? (hop.t < 0.5 ? hop.fr : hop.tr) : pr;
+    const cx = hop ? hop.fx + (hop.tx - hop.fx) * Math.min(1, hop.t) : px;
+    const lane = laneAt(effR);
+    if (lane.type === 'road') {
+      for (const o of lane.objs) {
+        if (Math.abs(cx - o.x) < o.w / 2 - 2 + 11) return die('car');
+      }
+    }
+
+    // 後ろに取り残されるとゲームオーバー
+    if (started) creepRow += dt * (0.28 + Math.min(0.5, score / 200));
+    const prog = hop ? hop.fr + (hop.tr - hop.fr) * Math.min(1, hop.t) : pr;
+    camRow += (Math.max(prog, creepRow) - camRow) * Math.min(1, dt * 7);
+    if (prog < creepRow - 4.4) return die('behind');
+    ensureLanes(Math.ceil(camRow) + 24);
+    for (const r of lanes.keys()) if (r < camRow - 12) lanes.delete(r);
+  }
+
+  // ---------- 描画 ----------
+  const rowY = r => BASE_Y - (r - camRow) * TILE;
+
+  function text(g, s, x, yy, size, color = '#3a2a10', stroke = '#fff8dc', align = 'center') {
+    g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`;
+    g.textAlign = align; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = size / 5;
+    g.strokeStyle = stroke; g.strokeText(s, x, yy);
+    g.fillStyle = color; g.fillText(s, x, yy);
+  }
+
+  function drawTree(g, kind, x, y) {
+    if (kind === 'rock') {
+      g.fillStyle = '#9e9e9e'; g.strokeStyle = '#3a2a10'; g.lineWidth = 2;
+      g.beginPath(); g.ellipse(x, y + 5, 16, 12, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,.4)'; g.beginPath(); g.ellipse(x - 5, y, 5, 3, 0, 0, Math.PI * 2); g.fill();
+      return;
+    }
+    g.fillStyle = '#7a4a1a'; g.fillRect(x - 3, y + 4, 6, 14);
+    g.fillStyle = '#2e7d32'; g.strokeStyle = '#1b4d1f'; g.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const ty = y - 14 + i * 9, tw = 12 + i * 5;
+      g.beginPath(); g.moveTo(x, ty - 10); g.lineTo(x - tw, ty + 6); g.lineTo(x + tw, ty + 6); g.closePath(); g.fill(); g.stroke();
+    }
+  }
+
+  function drawCar(g, o, dir, y) {
+    const h = 28, x = o.x - o.w / 2, top = y - h / 2;
+    g.fillStyle = o.color; g.strokeStyle = '#3a2a10'; g.lineWidth = 2.5;
+    g.beginPath(); g.roundRect(x, top, o.w, h, 6); g.fill(); g.stroke();
+    g.fillStyle = '#cfe8f7';
+    const wx = dir > 0 ? x + o.w - 20 : x + 6;
+    g.fillRect(wx, top + 5, 14, h - 10);
+    if (o.kind === 'truck') { g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(dir > 0 ? x + 6 : x + 26, top + 5, o.w - 38, h - 10); }
+    g.fillStyle = '#222';
+    g.fillRect(x + 8, top - 3, 12, 5); g.fillRect(x + o.w - 20, top - 3, 12, 5);
+    g.fillRect(x + 8, top + h - 2, 12, 5); g.fillRect(x + o.w - 20, top + h - 2, 12, 5);
+  }
+
+  function drawRaft(g, o, y) {
+    const n = Math.round(o.w / TILE), h = 32, x = o.x - o.w / 2;
+    for (let i = 0; i < n; i++) {
+      const bx = x + i * TILE;
+      g.fillStyle = '#c8a25a'; g.fillRect(bx + 1, y - h / 2, TILE - 2, h);
+      g.fillStyle = '#9c7a35';
+      g.fillRect(bx + 1, y - 5, TILE - 2, 4); g.fillRect(bx + 1, y + 6, TILE - 2, 4);
+      g.strokeStyle = '#3a2a10'; g.lineWidth = 2.5; g.strokeRect(bx + 1, y - h / 2, TILE - 2, h);
+    }
+  }
+
+  function drawLane(g, lane) {
+    const y = rowY(lane.r), top = y - TILE / 2;
+    if (y < -TILE || y > H + TILE) return false;
+    if (lane.type === 'grass') {
+      g.fillStyle = lane.r % 2 ? '#a8d672' : '#9ccb66'; g.fillRect(0, top, W, TILE + 1);
+    } else if (lane.type === 'road') {
+      g.fillStyle = '#5b5b5b'; g.fillRect(0, top, W, TILE + 1);
+      g.fillStyle = 'rgba(255,255,255,.7)';
+      for (let x = 10; x < W; x += 44) g.fillRect(x, y - 1.5, 22, 3);
+      for (const o of lane.objs) drawCar(g, o, lane.dir, y);
+    } else {
+      g.fillStyle = '#5fb8e0'; g.fillRect(0, top, W, TILE + 1);
+      g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 2;
+      const t = performance.now() / 600;
+      for (let x = -20; x < W + 20; x += 52) {
+        const wx = x + (lane.dir * t * 14) % 52, wy = y - 10 + (lane.r % 3) * 8;
+        g.beginPath(); g.moveTo(wx, wy); g.quadraticCurveTo(wx + 8, wy - 5, wx + 16, wy); g.stroke();
+      }
+      for (const o of lane.objs) drawRaft(g, o, y);
+    }
+    if (lane.type === 'grass') {
+      lane.trees.forEach((k, c) => { if (k) drawTree(g, k, c * TILE + TILE / 2, y); });
+    }
+    return true;
+  }
+
+  function playerPos() {
+    if (hop) {
+      const t = Math.min(1, hop.t);
+      return { x: hop.fx + (hop.tx - hop.fx) * t, r: hop.fr + (hop.tr - hop.fr) * t, lift: Math.sin(Math.PI * t) * 12 };
+    }
+    return { x: px, r: pr, lift: 0 };
+  }
+
+  function drawPlayer(g, lv) {
+    const p = playerPos();
+    const y = rowY(p.r);
+    const face = state === 'over' ? 'hit' : winT > 0 ? 'win' : 'normal';
+    if (state === 'over' && deadKind === 'water') {
+      const k = Math.min(1, deadT / 0.5);
+      g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 3;
+      for (let i = 0; i < 2; i++) { g.beginPath(); g.ellipse(p.x, y + 4, 12 + k * 22 + i * 8, 6 + k * 9 + i * 4, 0, 0, Math.PI * 2); g.stroke(); }
+      if (k < 1) { g.save(); g.globalAlpha = 1 - k; drawSumo(g, lv, face, p.x, y + k * 10); g.restore(); }
+      return;
+    }
+    g.fillStyle = 'rgba(0,0,0,.22)';
+    g.beginPath(); g.ellipse(p.x, y + 14, 14 - p.lift * 0.3, 5, 0, 0, Math.PI * 2); g.fill();
+    if (state === 'over' && deadKind === 'car') drawSumo(g, lv, face, p.x, y + 8, 1.35, 0.3);
+    else drawSumo(g, lv, face, p.x, y - p.lift, 1 - p.lift * 0.008, 1 + p.lift * 0.012);
+    if (popT > 0 && state === 'play') {
+      g.globalAlpha = Math.min(1, popT * 3);
+      text(g, popMsg, p.x, y - 34 - (0.45 - popT) * 30, 17, '#b71c1c');
+      g.globalAlpha = 1;
+    }
+  }
+
+  function drawHud(g, lv) {
+    g.fillStyle = 'rgba(255,248,220,.95)'; g.fillRect(0, 0, W, HUD_H);
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, HUD_H); g.lineTo(W, HUD_H); g.stroke();
+    drawSumo(g, lv, winT > 0 ? 'win' : 'normal', 30, 31);
+    g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillStyle = 'rgba(58,42,16,.7)'; g.textBaseline = 'middle';
+    g.fillText('位', 58, 13);
+    text(g, RANKS[lv].name, 58, 34, 22, '#3a2a10', 'rgba(0,0,0,0)', 'left');
+    g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillStyle = 'rgba(58,42,16,.7)';
+    g.fillText('スコア', W - 12, 13);
+    text(g, String(score), W - 12, 36, 28, '#3a2a10', 'rgba(0,0,0,0)', 'right');
+    const nx = RANKS[lv + 1];
+    g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#3a2a10';
+    g.fillText(nx ? `${nx.name}まで あと${nx.from - score}` : '最高位！', W / 2 + 8, 30);
+  }
+
+  function draw() {
+    const g = ctx;
+    g.fillStyle = '#a8d672'; g.fillRect(0, 0, W, H);
+    const lv = rankOf(score);
+    const pRow = Math.round(playerPos().r);
+    const top = Math.ceil(camRow + BASE_Y / TILE + 1);
+    const bottom = Math.floor(camRow - (H - BASE_Y) / TILE - 1);
+    for (let r = top; r >= bottom; r--) {
+      const lane = lanes.get(r);
+      if (!lane) continue;
+      drawLane(g, lane);
+      if (r === pRow) drawPlayer(g, lv);
+    }
+
+    drawHud(g, lv);
+    if (winT > 0) text(g, '出世！ ' + RANKS[lv].name, W / 2, 100, 30, '#b71c1c');
+
+    if (state === 'ready') {
+      text(g, 'はなりきしクロッシー', W / 2, 190, 30);
+      text(g, 'タップで 前へ', W / 2, 250, 22);
+      text(g, 'スワイプで 左・右・後ろ', W / 2, 282, 18);
+      text(g, 'ベスト ' + best, W / 2, 316, 18);
+    }
+
+    if (state === 'over') {
+      const a = Math.min(1, Math.max(0, (deadT - 0.4) / 0.3));
+      g.fillStyle = `rgba(58,42,16,${0.45 * a})`; g.fillRect(0, 0, W, H);
+      g.globalAlpha = a;
+      g.drawImage(IMG.home, W / 2 - 100, 130, 200, 200);
+      const why = deadKind === 'car' ? 'ひかれた！' : deadKind === 'water' ? 'おぼれた！' : 'おいてかれた！';
+      text(g, why, W / 2, 360, 36);
+      text(g, `${score} 歩  ${RANKS[lv].name}`, W / 2, 415, 28);
+      text(g, `ベスト ${best}`, W / 2, 455, 20);
+      if (deadT > 0.6) text(g, 'タップで もういちど', W / 2, 520, 22, '#1f5c00');
+      g.globalAlpha = 1;
+    }
+  }
+
+  // ---------- ループ・入力 ----------
+  let last = 0;
+  function frame(t) {
+    const dt = Math.min(0.033, (t - last) / 1000 || 0);
+    last = t;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  let down = null;
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); down = { x: e.clientX, y: e.clientY }; });
+  cv.addEventListener('pointerup', e => {
+    e.preventDefault();
+    if (!down) return;
+    const dx = e.clientX - down.x, dy = e.clientY - down.y;
+    down = null;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) tryMove(0, 1);
+    else if (Math.abs(dx) > Math.abs(dy)) tryMove(dx > 0 ? 1 : -1, 0);
+    else tryMove(0, dy < 0 ? 1 : -1);
+  });
+  window.addEventListener('keydown', e => {
+    const k = { ArrowUp: [0, 1], KeyW: [0, 1], Space: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1],
+                ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] }[e.code];
+    if (!k) return;
+    e.preventDefault();
+    if (!e.repeat) tryMove(k[0], k[1]);
+  });
+
+  loadImages().then(() => {
+    buildSprites();
+    reset();
+    requestAnimationFrame(frame);
+  }).catch(err => { document.body.textContent = err.message; });
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
