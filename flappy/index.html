@@ -52,8 +52,8 @@
   const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
 
   const GRAVITY = 1500, FLAP = -430, SPEED = 140;
-  const SPEED_UP = 2.5, SPEED_MAX = 240; // 1点ごとに少しずつ加速（上限あり）
-  const curSpeed = () => Math.min(SPEED_MAX, SPEED + score * SPEED_UP);
+  const SPEED_MAX = 240, SPEED_MAX_SCORE = 100; // 得点100で最高速になるまで少しずつ加速
+  const curSpeed = () => SPEED + (SPEED_MAX - SPEED) * Math.min(1, score / SPEED_MAX_SCORE);
   const GAP = 175, SPACING = 215, PIPE_W = 64;
   const PLAYER_R = 24;
   const PX = 110; // 力士の横位置
