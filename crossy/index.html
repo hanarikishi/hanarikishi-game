@@ -31,11 +31,16 @@
 (() => {
   'use strict';
 
-  // ---------- 定義 ----------
+  // ================= 定義 =================
   const W = 420, H = 700;
-  const TILE = 42, COLS = W / TILE;          // 10列
-  const BASE_Y = H * 0.7;                    // カメラ行の画面上の高さ
+  const COLS = 9;                       // 遊べる列数（x = 0..9 のタイル座標）
   const HUD_H = 58;
+
+  // 斜め俯瞰の投影（本家のように、レーンが右下がりに傾いて見える）
+  const T = 50;
+  const TX = T * 0.98, TY = T * 0.17;   // +x（右）: 右へ・少し手前へ
+  const ZX = T * 0.16, ZY = -T * 0.9;   // +z（前）: 奥へ・少し右へ
+  const OX = W / 2, OY = H * 0.68;
 
   const RANKS = [
     { name: '前相撲', from: 0,   body: '#f1efe8', belt: '#111111' },
@@ -52,12 +57,14 @@
   ];
   const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
 
-  const HOP = 0.12;                // 1マス進む時間
-  const PLAYER_R = 17;
-  const PERIOD = W + 300;          // 乗り物が一周する長さ（画面外の余白込み）
-  const CAR_COLORS = ['#e53935', '#1e88e5', '#fdd835', '#8e24aa', '#43a047', '#fb8c00'];
+  const HOP = 0.13;                      // 1マス進む時間
+  const PLAYER_R = 24;
+  const WRAP_L = -6, WRAP_R = 15, PERIOD = WRAP_R - WRAP_L; // 乗り物が一周する範囲（タイル）
+  const IDLE_EAGLE = 7;                  // 止まっているとワシが来る秒数
+  const H_GRASS = 8, H_ROAD = 0, H_WATER = -4;
+  const CAR_COLORS = ['#e53935', '#1e88e5', '#fdd835', '#8e24aa', '#43a047', '#fb8c00', '#ec407a'];
 
-  // ---------- 画像 ----------
+  // ================= 画像 =================
   const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
   const IMG = {};
   const CX = 513, CY = 538, BODY_R = 395;
@@ -105,64 +112,125 @@
     });
   }
 
-  function drawSumo(g, lv, face, x, y, sx = 1, sy = 1) {
+  // 足元(fx, fy)に立たせて描く。sx,sy は潰れ・伸び
+  function drawSumo(g, lv, face, fx, fy, sx = 1, sy = 1) {
     const cv = sprites[lv][face];
     const w = cv.width / DPR;
     g.save();
-    g.translate(x, y);
+    g.translate(fx, fy - PLAYER_R * 0.92 * sy);
     g.scale(sx, sy);
     g.drawImage(cv, -CX * SCALE, -CY * SCALE, w, w);
     g.restore();
   }
 
-  // ---------- コース生成 ----------
-  const lanes = new Map();   // 行番号 -> レーン
-  let genRow = 0, lastType = 'grass', runLen = 0, lastDir = 1;
+  // ================= 音 =================
+  let AC = null, muted = false;
+  try { muted = localStorage.getItem('sumo-crossy-mute') === '1'; } catch {}
+  function ac() {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch {} }
+    if (AC && AC.state === 'suspended') AC.resume();
+    return AC;
+  }
+  function tone(f0, f1, dur, type = 'square', vol = 0.06, delay = 0) {
+    if (muted) return;
+    const a = ac(); if (!a) return;
+    const t = a.currentTime + delay;
+    const o = a.createOscillator(), gn = a.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + dur);
+    gn.gain.setValueAtTime(vol, t);
+    gn.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(gn); gn.connect(a.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(dur, vol = 0.1, freq = 900) {
+    if (muted) return;
+    const a = ac(); if (!a) return;
+    const n = Math.floor(a.sampleRate * dur);
+    const buf = a.createBuffer(1, n, a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = a.createBufferSource(); src.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq;
+    const gn = a.createGain(); gn.gain.value = vol;
+    src.connect(f); f.connect(gn); gn.connect(a.destination);
+    src.start();
+  }
+  const sfx = {
+    hop()    { tone(380, 760, 0.09, 'square', 0.05); },
+    coin()   { tone(988, 988, 0.07, 'square', 0.05); tone(1319, 1319, 0.14, 'square', 0.05, 0.07); },
+    hit()    { noise(0.25, 0.18, 700); tone(180, 50, 0.3, 'sawtooth', 0.08); },
+    splash() { noise(0.4, 0.14, 1800); tone(500, 120, 0.25, 'sine', 0.05); },
+    eagle()  { tone(1400, 500, 0.5, 'sawtooth', 0.05); tone(1200, 400, 0.5, 'sawtooth', 0.04, 0.12); },
+    rank()   { [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.12, 'square', 0.05, i * 0.08)); },
+    bell()   { tone(1568, 1500, 0.1, 'triangle', 0.06); },
+    train()  { noise(0.9, 0.06, 300); },
+  };
 
+  // ================= コース生成 =================
+  const lanes = new Map();
+  let genRow = 0, lastType = 'grass', runLen = 0, lastDir = 1;
   const rnd = (a, b) => a + Math.random() * (b - a);
 
   function makeLane(r) {
     let type;
     if (r < 3) type = 'grass';
-    else if (lastType === 'grass') type = (r >= 6 && Math.random() < 0.4) ? 'river' : 'road';
-    else if (runLen < 3 && Math.random() < 0.55) type = lastType;
+    else if (lastType === 'grass') {
+      const roll = Math.random();
+      type = (r >= 8 && roll < 0.12) ? 'rail' : (r >= 6 && roll < 0.45) ? 'river' : 'road';
+    } else if (lastType !== 'rail' && runLen < 3 && Math.random() < 0.55) type = lastType;
     else type = 'grass';
     runLen = type === lastType ? runLen + 1 : 1;
     lastType = type;
 
-    const lane = { type, r, objs: [], trees: [], dir: 1, speed: 0 };
+    const lane = { type, r, objs: [], trees: {}, coins: {}, dir: 1, speed: 0, kind: 'logs', pads: [] };
     const diff = Math.min(1, r / 120);
 
     if (type === 'grass') {
-      if (r >= 3) {
-        for (let c = 0; c < COLS; c++) {
-          if (Math.random() < 0.16) lane.trees[c] = Math.random() < 0.7 ? 'pine' : 'rock';
-        }
+      for (let c = -5; c < COLS + 5; c++) {
+        const inside = c >= 0 && c < COLS;
+        if (r < 3 && inside) continue;
+        if (Math.random() < (inside ? 0.15 : 0.7)) lane.trees[c] = ['pine', 'pine', 'sakura', 'rock'][Math.floor(Math.random() * 4)];
+        else if (inside && r >= 2 && Math.random() < 0.06) lane.coins[c] = true;
       }
       return lane;
     }
 
     lane.dir = lastDir = -lastDir;
     if (type === 'road') {
-      lane.speed = rnd(70, 120) + diff * 90;
-      const n = 3 + Math.floor(Math.random() * (2 + diff * 2));
+      lane.speed = rnd(1.6, 2.8) + diff * 2.2;
+      const n = Math.min(6, 4 + Math.floor(Math.random() * (2 + diff * 2)));
       const slot = PERIOD / n;
       for (let i = 0; i < n; i++) {
-        const truck = n <= 4 && Math.random() < 0.3;
+        const truck = n <= 5 && Math.random() < 0.3;
         lane.objs.push({
-          x: i * slot + rnd(-slot * 0.1, slot * 0.1) - 150,
-          w: truck ? 96 : 56, kind: truck ? 'truck' : 'car',
+          x: WRAP_L + i * slot + rnd(-slot * 0.1, slot * 0.1),
+          w: truck ? 2.7 : 1.6, kind: truck ? 'truck' : 'car',
           color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
         });
       }
-    } else {
-      lane.speed = rnd(40, 70) + diff * 50;
-      const n = 3;
-      const slot = PERIOD / n;
-      for (let i = 0; i < n; i++) {
-        const tiles = 2 + Math.floor(Math.random() * 2);
-        lane.objs.push({ x: i * slot + rnd(-slot * 0.12, slot * 0.12) - 150, w: TILE * tiles, kind: 'raft' });
+    } else if (type === 'river') {
+      if (r >= 10 && Math.random() < 0.35) {
+        lane.kind = 'pads';
+        let miss = 0;
+        for (let c = 0; c < COLS; c++) {
+          let p = Math.random() < 0.72;
+          if (!p && miss >= 2) p = true;
+          miss = p ? 0 : miss + 1;
+          lane.pads[c] = p;
+        }
+      } else {
+        lane.speed = rnd(0.9, 1.6) + diff * 1.2;
+        const n = 3;
+        const slot = PERIOD / n;
+        for (let i = 0; i < n; i++) {
+          lane.objs.push({ x: WRAP_L + i * slot + rnd(-slot * 0.12, slot * 0.12), w: 2 + Math.floor(Math.random() * 3), kind: 'raft' });
+        }
       }
+    } else { // rail
+      lane.speed = 0;
+      lane.rs = { phase: 'idle', t: rnd(1.5, 5), head: 0, len: 15 };
     }
     return lane;
   }
@@ -170,15 +238,15 @@
   function ensureLanes(upTo) {
     while (genRow <= upTo) { lanes.set(genRow, makeLane(genRow)); genRow++; }
   }
-
   function laneAt(r) { ensureLanes(r); return lanes.get(r); }
 
-  // ---------- 状態 ----------
+  // ================= 状態 =================
   const cv = document.getElementById('game');
   const ctx = cv.getContext('2d');
   ctx.scale(cv.width / W, cv.height / H);
 
-  let state, pr, px, hop, queued, camRow, creepRow, score, best, winT, deadT, deadKind, popT, popMsg, started;
+  let state, pr, px, hop, queued, camRow, camX, creepRow, score, coinsGot, best, winT, deadT, deadKind;
+  let landT, popT, popMsg, started, idleT, shakeT, particles, deadPos, bobT = 0;
   try { best = +localStorage.getItem('sumo-crossy-best') || 0; } catch { best = 0; }
 
   const POP = ['どすこい！', 'はっけよい！', 'のこった！', 'ふんっ！'];
@@ -186,16 +254,32 @@
   function reset() {
     lanes.clear(); genRow = 0; lastType = 'grass'; runLen = 0; lastDir = 1;
     state = 'ready'; started = false;
-    pr = 0; px = Math.floor(COLS / 2) * TILE + TILE / 2;
+    pr = 0; px = 4.5;
     hop = null; queued = null;
-    camRow = 0; creepRow = 0; score = 0; winT = 0; deadT = 0; deadKind = ''; popT = 0; popMsg = '';
-    ensureLanes(24);
+    camRow = 0; camX = 4.5; creepRow = 0; score = 0; coinsGot = 0;
+    winT = 0; deadT = 0; deadKind = ''; popT = 0; popMsg = ''; landT = 0; idleT = 0; shakeT = 0;
+    particles = []; deadPos = null;
+    ensureLanes(26);
+    for (let r = -10; r < 0; r++) {            // スタート地点の後ろ（飾り）
+      const l = { type: 'grass', r, objs: [], trees: {}, coins: {}, dir: 1, speed: 0, kind: 'logs', pads: [] };
+      for (let c = -5; c < COLS + 5; c++) if (Math.random() < (r > -3 && c >= 0 && c < COLS ? 0.12 : 0.5)) l.trees[c] = ['pine', 'pine', 'sakura', 'rock'][Math.floor(Math.random() * 4)];
+      lanes.set(r, l);
+    }
   }
 
-  const snapX = x => Math.max(0, Math.min(COLS - 1, Math.round((x - TILE / 2) / TILE))) * TILE + TILE / 2;
+  const snapX = x => Math.max(0, Math.min(COLS - 1, Math.round(x - 0.5))) + 0.5;
+
+  function groundH(lane, x) {
+    if (lane.type === 'grass') return H_GRASS;
+    if (lane.type === 'river') {
+      if (lane.kind === 'pads') return lane.pads[Math.floor(x)] ? -1 : H_WATER;
+      return lane.objs.some(o => Math.abs(x - o.x) < o.w / 2 + 0.05) ? 5 : H_WATER;
+    }
+    return H_ROAD;
+  }
 
   function tryMove(dx, dr) {
-    if (state === 'over') { if (deadT > 0.6) reset(); return; }
+    if (state === 'over') { if (deadT > 0.7) reset(); return; }
     if (hop) { queued = [dx, dr]; return; }
     if (state === 'ready') { state = 'play'; started = true; }
 
@@ -203,91 +287,195 @@
     if (toR < 0) return;
     const lane = laneAt(toR);
     const curLane = laneAt(pr);
+    const keepX = l => l.type === 'river' && l.kind === 'logs';
     let toX;
-    if (dr !== 0) toX = lane.type === 'river' ? px : snapX(px);
+    if (dr !== 0) toX = keepX(lane) ? px : snapX(px);
     else {
-      toX = (curLane.type === 'river' ? px : snapX(px)) + dx * TILE;
-      if (toX < TILE / 2 - 1 || toX > W - TILE / 2 + 1) return;
+      toX = (keepX(curLane) ? px : snapX(px)) + dx;
+      if (toX < 0.3 || toX > COLS - 0.3) return;
     }
-    if (lane.type === 'grass') {
-      const c = Math.floor(toX / TILE);
-      if (lane.trees[c]) return;       // 木や岩でふさがっている
-    }
-    hop = { t: 0, fx: px, fr: pr, tx: toX, tr: toR };
-    popT = dr > 0 ? 0.45 : 0; popMsg = POP[Math.floor(Math.random() * POP.length)];
+    if (lane.type === 'grass' && lane.trees[Math.floor(toX)]) return; // 木や岩でふさがっている
+    hop = { t: 0, fx: px, fr: pr, tx: toX, tr: toR, fh: groundH(curLane, px), th: groundH(lane, toX) };
+    idleT = 0;
+    if (dr > 0) { popT = 0.5; popMsg = POP[Math.floor(Math.random() * POP.length)]; }
+    sfx.hop();
   }
 
   function die(kind) {
     if (state === 'over') return;
+    const p = playerPos();
+    deadPos = { x: p.x, r: p.r, h: p.h };
     state = 'over'; deadT = 0; deadKind = kind; hop = null; queued = null;
+    if (kind === 'car') { sfx.hit(); shakeT = 0.3; }
+    else if (kind === 'water') { sfx.splash(); spawnSplash(); }
+    else sfx.eagle();
     if (score > best) {
       best = score;
       try { localStorage.setItem('sumo-crossy-best', best); } catch {}
     }
   }
 
-  // ---------- 更新 ----------
+  // ================= パーティクル =================
+  function spawn(sx, sy, n, colors, spd = 90, up = 140, size = 4) {
+    for (let i = 0; i < n; i++) {
+      particles.push({ x: sx, y: sy, vx: rnd(-spd, spd), vy: -rnd(up * 0.4, up), life: rnd(0.3, 0.6), max: 0.6,
+        size: size * rnd(0.7, 1.4), color: colors[Math.floor(Math.random() * colors.length)] });
+    }
+  }
+  function spawnSplash() {
+    const p = deadPos; const [sx, sy] = P(p.x, p.r, H_WATER);
+    spawn(sx, sy, 16, ['#ffffff', '#bfe8ff', '#7fd0ff'], 110, 220, 5);
+  }
+  function spawnDust(lane, x, r, h) {
+    const [sx, sy] = P(x, r, h);
+    const col = lane.type === 'grass' ? ['#e6f5c8', '#c4e69a'] : lane.type === 'river' ? ['#ffffff', '#bfe8ff'] : ['#d9d6e4', '#b9b6c9'];
+    spawn(sx, sy, 5, col, 55, 70, 3.5);
+  }
+
+  // ================= 更新 =================
   function update(dt) {
+    bobT += dt;
     winT = Math.max(0, winT - dt);
     popT = Math.max(0, popT - dt);
+    landT = Math.max(0, landT - dt);
+    shakeT = Math.max(0, shakeT - dt);
+
+    for (const p of particles) { p.life -= dt; p.vy += 520 * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+    particles = particles.filter(p => p.life > 0);
 
     for (const lane of lanes.values()) {
-      for (const o of lane.objs) {
-        o.x += lane.dir * lane.speed * dt;
-        if (o.x > W + 150) o.x -= PERIOD;
-        else if (o.x < -150) o.x += PERIOD;
+      if (lane.type === 'road' || (lane.type === 'river' && lane.kind === 'logs')) {
+        for (const o of lane.objs) {
+          o.x += lane.dir * lane.speed * dt;
+          if (o.x > WRAP_R) o.x -= PERIOD;
+          else if (o.x < WRAP_L) o.x += PERIOD;
+        }
+      } else if (lane.type === 'rail') {
+        const s = lane.rs;
+        const near = lane.r > camRow - 6 && lane.r < camRow + 10;
+        s.t -= dt;
+        if (s.phase === 'idle' && s.t <= 0) { s.phase = 'warn'; s.t = 1.5; s.bellT = 0; }
+        else if (s.phase === 'warn') {
+          s.bellT -= dt;
+          if (s.bellT <= 0) { s.bellT = 0.28; if (near) sfx.bell(); }
+          if (s.t <= 0) { s.phase = 'pass'; s.head = lane.dir > 0 ? -1 : COLS + 1; if (near) sfx.train(); }
+        } else if (s.phase === 'pass') {
+          s.head += lane.dir * 16 * dt;
+          const tail = lane.dir > 0 ? s.head - s.len : s.head + s.len;
+          if ((lane.dir > 0 && tail > COLS + 3) || (lane.dir < 0 && tail < -3)) { s.phase = 'idle'; s.t = rnd(2, 6); }
+        }
       }
     }
 
     if (state === 'over') { deadT += dt; return; }
     if (state === 'ready') return;
 
+    idleT += dt;
+    if (idleT > IDLE_EAGLE) return die('eagle');
+
     // ホップ
     if (hop) {
       hop.t += dt / HOP;
       if (hop.t >= 1) {
-        px = hop.tx; pr = hop.tr; hop = null;
+        const lane = laneAt(hop.tr);
+        px = hop.tx; pr = hop.tr; const th = hop.th; hop = null;
+        landT = 0.1;
+        spawnDust(lane, px, pr, th);
         if (pr > score) {
           const before = rankOf(score);
           score = pr;
-          if (rankOf(score) > before) winT = 1.2;
+          if (rankOf(score) > before) { winT = 1.2; sfx.rank(); }
+        }
+        // コイン
+        if (lane.coins[Math.floor(px)]) { delete lane.coins[Math.floor(px)]; coinsGot++; sfx.coin(); const [sx, sy] = P(px, pr, 20); spawn(sx, sy, 8, ['#ffd54a', '#fff3b0'], 70, 120, 3.5); }
+        // 水に着地
+        if (lane.type === 'river') {
+          const ok = lane.kind === 'pads' ? lane.pads[Math.floor(px)] : lane.objs.some(o => Math.abs(px - o.x) < o.w / 2 + 0.05);
+          if (!ok) return die('water');
         }
         if (queued) { const q = queued; queued = null; tryMove(q[0], q[1]); }
       }
     }
 
-    // 川：筏に乗っていないと落ちる。乗っていれば流される
+    // 筏の上: 流される
     if (!hop) {
       const lane = laneAt(pr);
-      if (lane.type === 'river') {
-        const raft = lane.objs.find(o => Math.abs(px - o.x) < o.w / 2 + 2);
+      if (lane.type === 'river' && lane.kind === 'logs') {
+        const raft = lane.objs.find(o => Math.abs(px - o.x) < o.w / 2 + 0.05);
         if (!raft) return die('water');
         px += lane.dir * lane.speed * dt;
-        if (px < 4 || px > W - 4) return die('water');
+        if (px < 0.1 || px > COLS - 0.1) return die('water');
       }
     }
 
-    // 車との当たり判定
+    // 車・電車との当たり判定
     const effR = hop ? (hop.t < 0.5 ? hop.fr : hop.tr) : pr;
     const cx = hop ? hop.fx + (hop.tx - hop.fx) * Math.min(1, hop.t) : px;
     const lane = laneAt(effR);
     if (lane.type === 'road') {
-      for (const o of lane.objs) {
-        if (Math.abs(cx - o.x) < o.w / 2 - 2 + 11) return die('car');
-      }
+      for (const o of lane.objs) if (Math.abs(cx - o.x) < o.w / 2 + 0.22) return die('car');
+    } else if (lane.type === 'rail' && lane.rs.phase === 'pass') {
+      const a = lane.dir > 0 ? lane.rs.head - lane.rs.len : lane.rs.head;
+      const b = a + lane.rs.len;
+      if (cx > a - 0.2 && cx < b + 0.2) return die('car');
     }
 
-    // 後ろに取り残されるとゲームオーバー
-    if (started) creepRow += dt * (0.28 + Math.min(0.5, score / 200));
+    // 画面が先へ進む。取り残されるとワシに連れていかれる
+    creepRow += dt * (0.3 + Math.min(0.5, score / 200));
     const prog = hop ? hop.fr + (hop.tr - hop.fr) * Math.min(1, hop.t) : pr;
     camRow += (Math.max(prog, creepRow) - camRow) * Math.min(1, dt * 7);
-    if (prog < creepRow - 4.4) return die('behind');
-    ensureLanes(Math.ceil(camRow) + 24);
+    const tx = 4.5 + (cx - 4.5) * 0.8;
+    camX += (tx - camX) * Math.min(1, dt * 5);
+    if (prog < creepRow - 4.3) return die('eagle');
+    ensureLanes(Math.ceil(camRow) + 26);
     for (const r of lanes.keys()) if (r < camRow - 12) lanes.delete(r);
   }
 
-  // ---------- 描画 ----------
-  const rowY = r => BASE_Y - (r - camRow) * TILE;
+  // ================= 描画ヘルパー =================
+  let camShake = [0, 0];
+  function P(x, z, h = 0) {
+    return [OX + (x - camX) * TX + (z - camRow) * ZX + camShake[0],
+            OY + (x - camX) * TY + (z - camRow) * ZY - h + camShake[1]];
+  }
+
+  const shadeCache = {};
+  function shade(hex, f) {
+    const key = hex + f;
+    if (shadeCache[key]) return shadeCache[key];
+    const n = parseInt(hex.slice(1), 16);
+    const c = v => Math.max(0, Math.min(255, Math.round(v * f)));
+    return (shadeCache[key] = `rgb(${c(n >> 16)},${c((n >> 8) & 255)},${c(n & 255)})`);
+  }
+
+  function quad(g, pts, fill) {
+    g.fillStyle = fill; g.strokeStyle = fill; g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    g.closePath(); g.fill(); g.stroke();
+  }
+
+  // 箱: 上面・手前(-z)面・右(+x)面を描く
+  function boxC(g, x0, z0, x1, z1, h0, h1, top, front, right) {
+    quad(g, [P(x0, z0, h0), P(x1, z0, h0), P(x1, z0, h1), P(x0, z0, h1)], front);
+    quad(g, [P(x1, z0, h0), P(x1, z1, h0), P(x1, z1, h1), P(x1, z0, h1)], right);
+    quad(g, [P(x0, z0, h1), P(x1, z0, h1), P(x1, z1, h1), P(x0, z1, h1)], top);
+  }
+  function box(g, x0, z0, x1, z1, h0, h1, col) {
+    boxC(g, x0, z0, x1, z1, h0, h1, shade(col, 1.14), shade(col, 0.92), shade(col, 0.7));
+  }
+
+  // 右下にのびる影
+  function shadow(g, x0, z0, x1, z1, gh, height) {
+    g.fillStyle = 'rgba(30,20,60,.18)';
+    for (const k of [0.45, 0.9]) {
+      const dx = height * 0.7 * k, dy = height * 0.28 * k;
+      const a = P(x0, z0, gh), b = P(x1, z0, gh), c = P(x1, z1, gh), d = P(x0, z1, gh);
+      g.beginPath();
+      g.moveTo(a[0] + dx, a[1] + dy); g.lineTo(b[0] + dx, b[1] + dy);
+      g.lineTo(c[0] + dx, c[1] + dy); g.lineTo(d[0] + dx, d[1] + dy);
+      g.closePath(); g.fill();
+    }
+  }
 
   function text(g, s, x, yy, size, color = '#3a2a10', stroke = '#fff8dc', align = 'center') {
     g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`;
@@ -297,106 +485,232 @@
     g.fillStyle = color; g.fillText(s, x, yy);
   }
 
-  function drawTree(g, kind, x, y) {
+  // ================= 物体 =================
+  function drawTree(g, kind, c, r) {
+    const x = c + 0.5, z = r, gh = H_GRASS;
     if (kind === 'rock') {
-      g.fillStyle = '#9e9e9e'; g.strokeStyle = '#3a2a10'; g.lineWidth = 2;
-      g.beginPath(); g.ellipse(x, y + 5, 16, 12, 0, 0, Math.PI * 2); g.fill(); g.stroke();
-      g.fillStyle = 'rgba(255,255,255,.4)'; g.beginPath(); g.ellipse(x - 5, y, 5, 3, 0, 0, Math.PI * 2); g.fill();
+      shadow(g, x - 0.34, z - 0.3, x + 0.34, z + 0.3, gh, 11);
+      box(g, x - 0.34, z - 0.3, x + 0.34, z + 0.3, gh, gh + 10, '#9aa0aa');
+      box(g, x - 0.18, z - 0.16, x + 0.2, z + 0.18, gh + 10, gh + 16, '#b6bcc6');
       return;
     }
-    g.fillStyle = '#7a4a1a'; g.fillRect(x - 3, y + 4, 6, 14);
-    g.fillStyle = '#2e7d32'; g.strokeStyle = '#1b4d1f'; g.lineWidth = 2;
-    for (let i = 0; i < 3; i++) {
-      const ty = y - 14 + i * 9, tw = 12 + i * 5;
-      g.beginPath(); g.moveTo(x, ty - 10); g.lineTo(x - tw, ty + 6); g.lineTo(x + tw, ty + 6); g.closePath(); g.fill(); g.stroke();
+    shadow(g, x - 0.38, z - 0.38, x + 0.38, z + 0.38, gh, 40);
+    box(g, x - 0.11, z - 0.11, x + 0.11, z + 0.11, gh, gh + 8, '#7a4a1a');
+    if (kind === 'sakura') {
+      box(g, x - 0.44, z - 0.44, x + 0.44, z + 0.44, gh + 8, gh + 24, '#f4a6c6');
+      box(g, x - 0.3, z - 0.3, x + 0.3, z + 0.3, gh + 24, gh + 34, '#f9c4da');
+      box(g, x - 0.16, z - 0.16, x + 0.16, z + 0.16, gh + 34, gh + 40, '#fde0ec');
+    } else {
+      box(g, x - 0.42, z - 0.42, x + 0.42, z + 0.42, gh + 8, gh + 20, '#2e8b3e');
+      box(g, x - 0.32, z - 0.32, x + 0.32, z + 0.32, gh + 20, gh + 30, '#38a04a');
+      box(g, x - 0.2, z - 0.2, x + 0.2, z + 0.2, gh + 30, gh + 39, '#46b858');
     }
   }
 
-  function drawCar(g, o, dir, y) {
-    const h = 28, x = o.x - o.w / 2, top = y - h / 2;
-    g.fillStyle = o.color; g.strokeStyle = '#3a2a10'; g.lineWidth = 2.5;
-    g.beginPath(); g.roundRect(x, top, o.w, h, 6); g.fill(); g.stroke();
-    g.fillStyle = '#cfe8f7';
-    const wx = dir > 0 ? x + o.w - 20 : x + 6;
-    g.fillRect(wx, top + 5, 14, h - 10);
-    if (o.kind === 'truck') { g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(dir > 0 ? x + 6 : x + 26, top + 5, o.w - 38, h - 10); }
-    g.fillStyle = '#222';
-    g.fillRect(x + 8, top - 3, 12, 5); g.fillRect(x + o.w - 20, top - 3, 12, 5);
-    g.fillRect(x + 8, top + h - 2, 12, 5); g.fillRect(x + o.w - 20, top + h - 2, 12, 5);
+  function drawCoin(g, c, r) {
+    const [sx, sy] = P(c + 0.5, r, H_GRASS + 14 + Math.sin(bobT * 4 + c) * 2.5);
+    const sq = Math.abs(Math.cos(bobT * 3 + c));
+    const [shx, shy] = P(c + 0.5, r, H_GRASS);
+    g.fillStyle = 'rgba(30,20,60,.2)'; g.beginPath(); g.ellipse(shx + 3, shy + 1, 8, 3, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#c99a1c'; g.beginPath(); g.ellipse(sx, sy + 2, 9 * sq + 1, 9, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffd43b'; g.beginPath(); g.ellipse(sx, sy, 9 * sq + 1, 9, 0, 0, Math.PI * 2); g.fill();
+    if (sq > 0.4) { g.fillStyle = '#c99a1c'; g.fillRect(sx - 2, sy - 4, 4, 8); }
   }
 
-  function drawRaft(g, o, y) {
-    const n = Math.round(o.w / TILE), h = 32, x = o.x - o.w / 2;
+  function drawCar(g, o, dir, r) {
+    const z = r, L = o.w, x0 = o.x - L / 2, x1 = o.x + L / 2, gh = H_ROAD;
+    shadow(g, x0, z - 0.34, x1, z + 0.34, gh, 24);
+    // 車輪
+    const wheels = o.kind === 'truck' ? [0.2, 0.7, 2.0, 2.5] : [0.3, 1.3];
+    for (const wx of wheels) box(g, x0 + wx - 0.14, z - 0.36, x0 + wx + 0.14, z + 0.36, gh, gh + 6, '#222233');
+    if (o.kind === 'truck') {
+      const cab0 = dir > 0 ? x1 - 0.8 : x0, cab1 = cab0 + 0.8;
+      const car0 = dir > 0 ? x0 : x0 + 0.8, car1 = car0 + L - 0.8;
+      box(g, car0, z - 0.4, car1, z + 0.4, gh + 5, gh + 25, '#f2f2f4');                         // コンテナ
+      boxC(g, cab0, z - 0.36, cab1, z + 0.36, gh + 5, gh + 17, shade(o.color, 1.1), shade('#bfe3f2', 0.95), shade('#bfe3f2', 0.7)); // 運転席
+      box(g, cab0, z - 0.36, cab1, z + 0.36, gh + 5, gh + 9, o.color);
+    } else {
+      box(g, x0, z - 0.38, x1, z + 0.38, gh + 5, gh + 14, o.color);                              // 車体
+      const c0 = x0 + 0.4, c1 = x1 - 0.4;
+      boxC(g, c0, z - 0.3, c1, z + 0.3, gh + 14, gh + 23, shade(o.color, 1.15), shade('#bfe3f2', 0.95), shade('#bfe3f2', 0.7)); // 窓
+    }
+    // ライト
+    const fx = dir > 0 ? x1 : x0;
+    const [lx, ly] = P(fx, z - 0.3, gh + 9);
+    g.fillStyle = '#fff6b0'; g.fillRect(lx - 2, ly - 2, 4, 4);
+  }
+
+  function drawRaft(g, o, r) {
+    const z = r, x0 = o.x - o.w / 2, x1 = o.x + o.w / 2;
+    shadow(g, x0, z - 0.4, x1, z + 0.4, H_WATER, 10);
+    box(g, x0, z - 0.4, x1, z + 0.4, H_WATER - 1, 5, '#d8b25e');          // 米俵の筏
+    for (let i = 1; i < o.w * 2; i++) {
+      const bx = x0 + i * 0.5;
+      box(g, bx - 0.03, z - 0.41, bx + 0.03, z + 0.41, H_WATER - 1, 5.6, '#8a6a2a');
+    }
+  }
+
+  function drawPad(g, c, r) {
+    const [sx, sy] = P(c + 0.5, r, -1.5);
+    const bob = Math.sin(bobT * 2 + c * 1.7) * 1.2;
+    g.fillStyle = '#2f9a45'; g.beginPath(); g.ellipse(sx, sy + 3 + bob, 19, 11, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#4cc563'; g.beginPath(); g.ellipse(sx, sy + bob, 19, 11, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#58ab6a'; g.beginPath(); g.moveTo(sx, sy + bob); g.lineTo(sx + 19, sy + bob - 3); g.lineTo(sx + 17, sy + bob + 3); g.closePath(); g.fill();
+    if ((c * 7 + r) % 3 === 0) { g.fillStyle = '#ff8fb8'; g.fillRect(sx - 4, sy + bob - 6, 8, 6); g.fillStyle = '#fff'; g.fillRect(sx - 2, sy + bob - 8, 4, 3); }
+  }
+
+  function drawTrain(g, lane) {
+    const s = lane.rs, z = lane.r;
+    const a = lane.dir > 0 ? s.head - s.len : s.head;
+    const n = 5, carL = s.len / n;
     for (let i = 0; i < n; i++) {
-      const bx = x + i * TILE;
-      g.fillStyle = '#c8a25a'; g.fillRect(bx + 1, y - h / 2, TILE - 2, h);
-      g.fillStyle = '#9c7a35';
-      g.fillRect(bx + 1, y - 5, TILE - 2, 4); g.fillRect(bx + 1, y + 6, TILE - 2, 4);
-      g.strokeStyle = '#3a2a10'; g.lineWidth = 2.5; g.strokeRect(bx + 1, y - h / 2, TILE - 2, h);
+      const x0 = a + i * carL + 0.1, x1 = a + (i + 1) * carL - 0.1;
+      const head = lane.dir > 0 ? i === n - 1 : i === 0;
+      const base = head ? '#d32f2f' : '#cfd4dc';
+      shadow(g, x0, z - 0.42, x1, z + 0.42, H_ROAD, 26);
+      box(g, x0, z - 0.42, x1, z + 0.42, H_ROAD + 3, H_ROAD + 26, base);
+      // 窓の帯と赤い帯
+      quad(g, [P(x0 + 0.2, z - 0.42, 15), P(x1 - 0.2, z - 0.42, 15), P(x1 - 0.2, z - 0.42, 22), P(x0 + 0.2, z - 0.42, 22)], '#2b3b55');
+      quad(g, [P(x0, z - 0.42, 8), P(x1, z - 0.42, 8), P(x1, z - 0.42, 11), P(x0, z - 0.42, 11)], '#e53935');
     }
   }
+
+  // ================= レーン描画 =================
+  const X0 = -5, X1 = COLS + 5;
 
   function drawLane(g, lane) {
-    const y = rowY(lane.r), top = y - TILE / 2;
-    if (y < -TILE || y > H + TILE) return false;
+    const r = lane.r;
     if (lane.type === 'grass') {
-      g.fillStyle = lane.r % 2 ? '#a8d672' : '#9ccb66'; g.fillRect(0, top, W, TILE + 1);
-    } else if (lane.type === 'road') {
-      g.fillStyle = '#5b5b5b'; g.fillRect(0, top, W, TILE + 1);
-      g.fillStyle = 'rgba(255,255,255,.7)';
-      for (let x = 10; x < W; x += 44) g.fillRect(x, y - 1.5, 22, 3);
-      for (const o of lane.objs) drawCar(g, o, lane.dir, y);
-    } else {
-      g.fillStyle = '#5fb8e0'; g.fillRect(0, top, W, TILE + 1);
-      g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 2;
-      const t = performance.now() / 600;
-      for (let x = -20; x < W + 20; x += 52) {
-        const wx = x + (lane.dir * t * 14) % 52, wy = y - 10 + (lane.r % 3) * 8;
-        g.beginPath(); g.moveTo(wx, wy); g.quadraticCurveTo(wx + 8, wy - 5, wx + 16, wy); g.stroke();
+      const top = r % 2 ? '#86cf55' : '#7bc84c';
+      quad(g, [P(X0, r - 0.5, H_WATER), P(X1, r - 0.5, H_WATER), P(X1, r - 0.5, H_GRASS), P(X0, r - 0.5, H_GRASS)], shade('#7bc84c', 0.74));
+      quad(g, [P(X0, r - 0.5, H_GRASS), P(X1, r - 0.5, H_GRASS), P(X1, r + 0.5, H_GRASS), P(X0, r + 0.5, H_GRASS)], top);
+      for (let c = X0; c < X1; c++) {
+        if (lane.coins[c]) drawCoin(g, c, r);
+        if (lane.trees[c]) drawTree(g, lane.trees[c], c, r);
       }
-      for (const o of lane.objs) drawRaft(g, o, y);
+    } else if (lane.type === 'road') {
+      quad(g, [P(X0, r - 0.5, H_WATER), P(X1, r - 0.5, H_WATER), P(X1, r - 0.5, H_ROAD), P(X0, r - 0.5, H_ROAD)], '#3a394c');
+      quad(g, [P(X0, r - 0.5, H_ROAD), P(X1, r - 0.5, H_ROAD), P(X1, r + 0.5, H_ROAD), P(X0, r + 0.5, H_ROAD)], '#55546a');
+      for (let x = X0; x < X1; x += 1.4) {
+        quad(g, [P(x, r - 0.03, 0.2), P(x + 0.7, r - 0.03, 0.2), P(x + 0.7, r + 0.03, 0.2), P(x, r + 0.03, 0.2)], 'rgba(245,235,200,.8)');
+      }
+      for (const o of lane.objs) if (o.x > X0 - 2 && o.x < X1 + 2) drawCar(g, o, lane.dir, r);
+    } else if (lane.type === 'rail') {
+      quad(g, [P(X0, r - 0.5, H_WATER), P(X1, r - 0.5, H_WATER), P(X1, r - 0.5, H_ROAD), P(X0, r - 0.5, H_ROAD)], '#5e5246');
+      quad(g, [P(X0, r - 0.5, H_ROAD), P(X1, r - 0.5, H_ROAD), P(X1, r + 0.5, H_ROAD), P(X0, r + 0.5, H_ROAD)], '#8c7d6b');
+      for (let x = X0; x < X1; x += 0.55) {
+        quad(g, [P(x, r - 0.36, 0.3), P(x + 0.2, r - 0.36, 0.3), P(x + 0.2, r + 0.36, 0.3), P(x, r + 0.36, 0.3)], '#5b4636');
+      }
+      for (const dz of [-0.2, 0.2]) box(g, X0, r + dz - 0.04, X1, r + dz + 0.04, 0, 2.5, '#c3c8d0');
+      if (lane.rs.phase === 'pass') drawTrain(g, lane);
+      // 踏切の警告灯
+      const on = lane.rs.phase !== 'idle' && Math.floor(performance.now() / 160) % 2 === 0;
+      const sgx = camX - 3.7;                                   // 画面の左端あたりに立てる
+      box(g, sgx, r - 0.5, sgx + 0.14, r - 0.36, 0, 36, '#f3f3f3');
+      box(g, sgx - 0.2, r - 0.56, sgx + 0.36, r - 0.3, 36, 45, '#2a2a2a');
+      const [lx, ly] = P(sgx + 0.08, r - 0.56, 41);
+      g.fillStyle = on ? '#ff3b30' : '#6a2a2a'; g.fillRect(lx - 9, ly - 4, 7, 7);
+      g.fillStyle = lane.rs.phase !== 'idle' && !on ? '#ff3b30' : '#6a2a2a'; g.fillRect(lx + 2, ly - 4, 7, 7);
+    } else {
+      quad(g, [P(X0, r - 0.5, H_WATER - 6), P(X1, r - 0.5, H_WATER - 6), P(X1, r - 0.5, H_WATER), P(X0, r - 0.5, H_WATER)], '#2f86c0');
+      quad(g, [P(X0, r - 0.5, H_WATER), P(X1, r - 0.5, H_WATER), P(X1, r + 0.5, H_WATER), P(X0, r + 0.5, H_WATER)], '#52b3ea');
+      // 流れる波
+      const t = bobT * 0.8;
+      for (let i = 0; i < 9; i++) {
+        const wx = X0 + ((i * 2.3 + lane.dir * t * 1.3 + r * 0.9) % (X1 - X0) + (X1 - X0)) % (X1 - X0);
+        quad(g, [P(wx, r - 0.2 + (i % 3) * 0.2, H_WATER + 0.2), P(wx + 0.6, r - 0.2 + (i % 3) * 0.2, H_WATER + 0.2),
+                 P(wx + 0.6, r - 0.14 + (i % 3) * 0.2, H_WATER + 0.2), P(wx, r - 0.14 + (i % 3) * 0.2, H_WATER + 0.2)], 'rgba(255,255,255,.55)');
+      }
+      if (lane.kind === 'pads') lane.pads.forEach((p, c) => { if (p) drawPad(g, c, r); });
+      else for (const o of lane.objs) if (o.x > X0 - 3 && o.x < X1 + 3) drawRaft(g, o, r);
     }
-    if (lane.type === 'grass') {
-      lane.trees.forEach((k, c) => { if (k) drawTree(g, k, c * TILE + TILE / 2, y); });
-    }
-    return true;
   }
 
+  // ================= プレイヤー =================
   function playerPos() {
     if (hop) {
       const t = Math.min(1, hop.t);
-      return { x: hop.fx + (hop.tx - hop.fx) * t, r: hop.fr + (hop.tr - hop.fr) * t, lift: Math.sin(Math.PI * t) * 12 };
+      return { x: hop.fx + (hop.tx - hop.fx) * t, r: hop.fr + (hop.tr - hop.fr) * t,
+               lift: Math.sin(Math.PI * t) * 17, h: hop.fh + (hop.th - hop.fh) * t, t };
     }
-    return { x: px, r: pr, lift: 0 };
+    const lane = laneAt(pr);
+    return { x: px, r: pr, lift: 0, h: groundH(lane, px), t: -1 };
   }
 
   function drawPlayer(g, lv) {
-    const p = playerPos();
-    const y = rowY(p.r);
+    const p = state === 'over' && deadPos ? { x: deadPos.x, r: deadPos.r, lift: 0, h: deadPos.h, t: -1 } : playerPos();
+    const [sx, sy] = P(p.x, p.r, p.h + p.lift);
+    const [gx, gy] = P(p.x, p.r, p.h);
     const face = state === 'over' ? 'hit' : winT > 0 ? 'win' : 'normal';
+
     if (state === 'over' && deadKind === 'water') {
-      const k = Math.min(1, deadT / 0.5);
+      const k = Math.min(1, deadT / 0.6);
       g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 3;
-      for (let i = 0; i < 2; i++) { g.beginPath(); g.ellipse(p.x, y + 4, 12 + k * 22 + i * 8, 6 + k * 9 + i * 4, 0, 0, Math.PI * 2); g.stroke(); }
-      if (k < 1) { g.save(); g.globalAlpha = 1 - k; drawSumo(g, lv, face, p.x, y + k * 10); g.restore(); }
+      for (let i = 0; i < 2; i++) { g.beginPath(); g.ellipse(gx, gy + 2, 14 + k * 26 + i * 9, 6 + k * 10 + i * 4, 0, 0, Math.PI * 2); g.stroke(); }
+      if (k < 1) { g.save(); g.globalAlpha = 1 - k; drawSumo(g, lv, face, gx, gy + k * 14, 1, 1 - k * 0.5); g.restore(); }
       return;
     }
-    g.fillStyle = 'rgba(0,0,0,.22)';
-    g.beginPath(); g.ellipse(p.x, y + 14, 14 - p.lift * 0.3, 5, 0, 0, Math.PI * 2); g.fill();
-    if (state === 'over' && deadKind === 'car') drawSumo(g, lv, face, p.x, y + 8, 1.35, 0.3);
-    else drawSumo(g, lv, face, p.x, y - p.lift, 1 - p.lift * 0.008, 1 + p.lift * 0.012);
+    if (state === 'over' && deadKind === 'eagle') {
+      const e = eagleAt(deadT);
+      if (e.caught) drawSumo(g, lv, 'hit', e.x, e.y + 26, 1, 1);
+      else { g.fillStyle = 'rgba(30,20,60,.25)'; g.beginPath(); g.ellipse(gx, gy, 16, 6, 0, 0, Math.PI * 2); g.fill(); drawSumo(g, lv, 'hit', gx, gy, 1, 1); }
+      return;
+    }
+
+    // 影（ジャンプ中は小さく）
+    g.fillStyle = 'rgba(30,20,60,.24)';
+    g.beginPath(); g.ellipse(gx + 5, gy + 1, Math.max(7, 15 - p.lift * 0.35), 5.5, 0, 0, Math.PI * 2); g.fill();
+
+    if (state === 'over' && deadKind === 'car') { drawSumo(g, lv, face, gx, gy, 1.5, 0.22); return; }
+
+    // 伸び縮み: 跳ぶと縦に伸び、着地でぺちゃっと潰れる
+    let sxs = 1, sys = 1;
+    if (p.t >= 0) { const w = Math.sin(Math.PI * p.t); sys = 1 + w * 0.18; sxs = 1 - w * 0.1; }
+    else if (landT > 0) { const k = landT / 0.1; sys = 1 - k * 0.2; sxs = 1 + k * 0.18; }
+    drawSumo(g, lv, face, sx, sy, sxs, sys);
+
     if (popT > 0 && state === 'play') {
       g.globalAlpha = Math.min(1, popT * 3);
-      text(g, popMsg, p.x, y - 34 - (0.45 - popT) * 30, 17, '#b71c1c');
+      text(g, popMsg, sx, sy - 44 - (0.5 - popT) * 34, 17, '#b71c1c');
       g.globalAlpha = 1;
     }
   }
 
+  // ワシ（上から舞い降りて、力士をつかんで飛び去る）
+  function eagleAt(t) {
+    const p = deadPos;
+    const [gx, gy] = P(p.x, p.r, p.h);
+    const dive = 0.6;
+    if (t < dive) {
+      const k = t / dive, e = k * k;
+      return { x: gx + (1 - e) * 140, y: gy - 30 - (1 - e) * (gy + 60), caught: false, gx, gy };
+    }
+    return { x: gx, y: gy - 30 - (t - dive) * (t - dive) * 900 - (t - dive) * 220, caught: true, gx, gy };
+  }
+
+  function drawEagle(g, x, y, flap) {
+    g.save(); g.translate(x, y); g.scale(1.5, 1.5);
+    const w = Math.sin(flap) * 14;
+    g.fillStyle = '#4a2e1a';
+    for (const sd of [-1, 1]) {
+      g.beginPath(); g.moveTo(sd * 6, -4); g.lineTo(sd * 42, -12 - w); g.lineTo(sd * 36, 6 - w * 0.5); g.lineTo(sd * 6, 8); g.closePath(); g.fill();
+      g.fillStyle = '#6b4427'; g.beginPath(); g.moveTo(sd * 6, -2); g.lineTo(sd * 28, -9 - w * 0.8); g.lineTo(sd * 24, 2 - w * 0.4); g.lineTo(sd * 6, 4); g.closePath(); g.fill();
+      g.fillStyle = '#4a2e1a';
+    }
+    g.fillStyle = '#5b3a22'; g.fillRect(-8, -8, 16, 22);
+    g.fillStyle = '#f6f6f0'; g.fillRect(-7, -17, 14, 11);
+    g.fillStyle = '#f2b01e'; g.fillRect(-3, -9, 6, 5);
+    g.fillStyle = '#111'; g.fillRect(-5, -14, 3, 3); g.fillRect(2, -14, 3, 3);
+    g.fillStyle = '#f2b01e'; g.fillRect(-6, 14, 4, 5); g.fillRect(2, 14, 4, 5);
+    g.restore();
+  }
+
+  // ================= HUD =================
   function drawHud(g, lv) {
-    g.fillStyle = 'rgba(255,248,220,.95)'; g.fillRect(0, 0, W, HUD_H);
+    g.fillStyle = 'rgba(255,248,220,.96)'; g.fillRect(0, 0, W, HUD_H);
     g.strokeStyle = '#3a2a10'; g.lineWidth = 3;
     g.beginPath(); g.moveTo(0, HUD_H); g.lineTo(W, HUD_H); g.stroke();
-    drawSumo(g, lv, winT > 0 ? 'win' : 'normal', 30, 31);
+    drawSumo(g, lv, winT > 0 ? 'win' : 'normal', 30, 50, 1, 1);
     g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillStyle = 'rgba(58,42,16,.7)'; g.textBaseline = 'middle';
     g.fillText('位', 58, 13);
     text(g, RANKS[lv].name, 58, 34, 22, '#3a2a10', 'rgba(0,0,0,0)', 'left');
@@ -405,25 +719,50 @@
     text(g, String(score), W - 12, 36, 28, '#3a2a10', 'rgba(0,0,0,0)', 'right');
     const nx = RANKS[lv + 1];
     g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#3a2a10';
-    g.fillText(nx ? `${nx.name}まで あと${nx.from - score}` : '最高位！', W / 2 + 8, 30);
+    g.fillText(nx ? `${nx.name}まで あと${nx.from - score}` : '最高位！', W / 2 + 8, 21);
+    g.fillStyle = '#ffd43b'; g.strokeStyle = '#8a6a00'; g.lineWidth = 2;
+    g.beginPath(); g.arc(W / 2 - 14, 42, 8, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.font = 'bold 15px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#3a2a10';
+    g.fillText('×' + coinsGot, W / 2 - 2, 42);
+    // 音のON/OFF
+    g.font = '20px sans-serif'; g.textAlign = 'center';
+    g.fillText(muted ? '🔇' : '🔊', W - 24, HUD_H + 22);
   }
 
+  // ================= 描画 =================
   function draw() {
     const g = ctx;
-    g.fillStyle = '#a8d672'; g.fillRect(0, 0, W, H);
+    camShake = shakeT > 0 ? [(Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8] : [0, 0];
+    g.fillStyle = '#7bc84c'; g.fillRect(0, 0, W, H);
     const lv = rankOf(score);
-    const pRow = Math.round(playerPos().r);
-    const top = Math.ceil(camRow + BASE_Y / TILE + 1);
-    const bottom = Math.floor(camRow - (H - BASE_Y) / TILE - 1);
-    for (let r = top; r >= bottom; r--) {
+    const pLane = hop ? (hop.t < 0.5 ? hop.fr : hop.tr) : pr;
+
+    for (let r = Math.ceil(camRow) + 15; r >= Math.floor(camRow) - 9; r--) {
       const lane = lanes.get(r);
       if (!lane) continue;
       drawLane(g, lane);
-      if (r === pRow) drawPlayer(g, lv);
+      if (r === pLane) drawPlayer(g, lv);
+    }
+
+    // パーティクル
+    for (const p of particles) {
+      g.globalAlpha = Math.max(0, Math.min(1, p.life / 0.3));
+      g.fillStyle = p.color; g.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    g.globalAlpha = 1;
+
+    if (state === 'over' && deadKind === 'eagle') {
+      const e = eagleAt(deadT);
+      drawEagle(g, e.x, e.y, performance.now() / 55);
+    }
+
+    // 止まっているとワシが来る警告
+    if (state === 'play' && idleT > IDLE_EAGLE - 3) {
+      if (Math.floor(performance.now() / 250) % 2 === 0) text(g, 'ワシが くるぞ！', W / 2, H - 80, 24, '#b71c1c');
     }
 
     drawHud(g, lv);
-    if (winT > 0) text(g, '出世！ ' + RANKS[lv].name, W / 2, 100, 30, '#b71c1c');
+    if (winT > 0) text(g, '出世！ ' + RANKS[lv].name, W / 2, 110, 30, '#b71c1c');
 
     if (state === 'ready') {
       text(g, 'はなりきしクロッシー', W / 2, 190, 30);
@@ -433,20 +772,20 @@
     }
 
     if (state === 'over') {
-      const a = Math.min(1, Math.max(0, (deadT - 0.4) / 0.3));
+      const a = Math.min(1, Math.max(0, (deadT - 0.5) / 0.3));
       g.fillStyle = `rgba(58,42,16,${0.45 * a})`; g.fillRect(0, 0, W, H);
       g.globalAlpha = a;
       g.drawImage(IMG.home, W / 2 - 100, 130, 200, 200);
-      const why = deadKind === 'car' ? 'ひかれた！' : deadKind === 'water' ? 'おぼれた！' : 'おいてかれた！';
-      text(g, why, W / 2, 360, 36);
+      const why = deadKind === 'car' ? 'ひかれた！' : deadKind === 'water' ? 'おぼれた！' : 'ワシに さらわれた！';
+      text(g, why, W / 2, 360, 34);
       text(g, `${score} 歩  ${RANKS[lv].name}`, W / 2, 415, 28);
       text(g, `ベスト ${best}`, W / 2, 455, 20);
-      if (deadT > 0.6) text(g, 'タップで もういちど', W / 2, 520, 22, '#1f5c00');
+      if (deadT > 0.7) text(g, 'タップで もういちど', W / 2, 520, 22, '#1f5c00');
       g.globalAlpha = 1;
     }
   }
 
-  // ---------- ループ・入力 ----------
+  // ================= ループ・入力 =================
   let last = 0;
   function frame(t) {
     const dt = Math.min(0.033, (t - last) / 1000 || 0);
@@ -457,12 +796,18 @@
   }
 
   let down = null;
-  cv.addEventListener('pointerdown', e => { e.preventDefault(); down = { x: e.clientX, y: e.clientY }; });
+  const toCanvas = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; };
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); ac(); down = { x: e.clientX, y: e.clientY, c: toCanvas(e) }; });
   cv.addEventListener('pointerup', e => {
     e.preventDefault();
     if (!down) return;
-    const dx = e.clientX - down.x, dy = e.clientY - down.y;
+    const dx = e.clientX - down.x, dy = e.clientY - down.y, c = down.c;
     down = null;
+    if (c[0] > W - 48 && c[1] > HUD_H && c[1] < HUD_H + 44) {   // 音のON/OFF
+      muted = !muted;
+      try { localStorage.setItem('sumo-crossy-mute', muted ? '1' : '0'); } catch {}
+      return;
+    }
     if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) tryMove(0, 1);
     else if (Math.abs(dx) > Math.abs(dy)) tryMove(dx > 0 ? 1 : -1, 0);
     else tryMove(0, dy < 0 ? 1 : -1);
@@ -472,6 +817,7 @@
                 ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] }[e.code];
     if (!k) return;
     e.preventDefault();
+    ac();
     if (!e.repeat) tryMove(k[0], k[1]);
   });
 

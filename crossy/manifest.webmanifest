@@ -1,7 +1,7 @@
 {
   "name": "はなりきしクロッシー",
   "short_name": "クロッシー",
-  "description": "車と川をわたって、前へ進んで番付を上げるゲーム",
+  "description": "車・川・電車をわたって、ワシに気をつけながら前へ進んで番付を上げるゲーム",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
