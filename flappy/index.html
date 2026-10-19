@@ -37,17 +37,17 @@
 
   const RANKS = [
     // name, この得点から, 体の色, まわしの色
-    { name: '前相撲', from: 0,  body: '#f1efe8', belt: '#111111' },
-    { name: '序の口', from: 2,  body: '#f7e3bd', belt: '#111111' },
-    { name: '序二段', from: 4,  body: '#bfe4f6', belt: '#111111' },
-    { name: '三段目', from: 7,  body: '#c9eaa5', belt: '#111111' },
-    { name: '幕下',   from: 10, body: '#f8cfe0', belt: '#111111' },
-    { name: '十両',   from: 14, body: '#ffd699', belt: '#e65100' },
-    { name: '前頭',   from: 19, body: '#dcc4f2', belt: '#6a1b9a' },
-    { name: '小結',   from: 25, body: '#ffb3a1', belt: '#b71c1c' },
-    { name: '関脇',   from: 32, body: '#b9e3d3', belt: '#7a4a00' },
-    { name: '大関',   from: 40, body: '#ff9a3c', belt: '#14507a' },
-    { name: '横綱',   from: 50, body: '#ffee00', belt: '#1f5c00' },
+    { name: '前相撲', from: 0, body: '#f1efe8', belt: '#111111' },
+    { name: '序の口', from: 3, body: '#f7e3bd', belt: '#111111' },
+    { name: '序二段', from: 7, body: '#bfe4f6', belt: '#111111' },
+    { name: '三段目', from: 12, body: '#c9eaa5', belt: '#111111' },
+    { name: '幕下',   from: 18, body: '#f8cfe0', belt: '#111111' },
+    { name: '十両',   from: 25, body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 33, body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 42, body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 52, body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 64, body: '#ff9a3c', belt: '#14507a' },
+    { name: '横綱',   from: 80, body: '#ffee00', belt: '#1f5c00' },
   ];
   const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
 
@@ -204,12 +204,43 @@
     col(p.top + GAP, GROUND_Y - p.top - GAP);
   }
 
-  function text(g, s, x, yy, size, color = '#3a2a10', stroke = '#fff8dc') {
+  function text(g, s, x, yy, size, color = '#3a2a10', stroke = '#fff8dc', align = 'center') {
     g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`;
-    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.textAlign = align; g.textBaseline = 'middle';
     g.lineJoin = 'round'; g.lineWidth = size / 5;
     g.strokeStyle = stroke; g.strokeText(s, x, yy);
     g.fillStyle = color; g.fillText(s, x, yy);
+  }
+
+  function drawBalloon(g, lv) {
+    const sway = state === 'play' ? Math.max(-12, Math.min(12, -vy * 0.025)) : 0;
+    let bx = PX + sway, by = y - 78;
+    if (state === 'over') { by -= deadT * 260; bx += Math.sin(deadT * 3) * 10; }
+    const sx = PX, sy = y - PLAYER_R + 4; // 力士の頭の上
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo((sx + bx) / 2 + 4, (sy + by) / 2, bx, by + 22); g.stroke();
+    g.fillStyle = '#e53935';
+    g.beginPath(); g.ellipse(bx, by, 19, 24, 0, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.moveTo(bx, by + 23); g.lineTo(bx - 4, by + 29); g.lineTo(bx + 4, by + 29); g.closePath(); g.fill();
+    g.lineWidth = 2.5; g.beginPath(); g.ellipse(bx, by, 19, 24, 0, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = 'rgba(255,255,255,.55)';
+    g.beginPath(); g.ellipse(bx - 7, by - 9, 4, 7, -0.5, 0, Math.PI * 2); g.fill();
+  }
+
+  function drawHud(g, lv) {
+    g.fillStyle = 'rgba(255,248,220,.95)'; g.fillRect(0, 0, W, 58);
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, 58); g.lineTo(W, 58); g.stroke();
+    drawSumo(g, lv, winT > 0 ? 'win' : 'normal', 30, 31, 0);
+    g.font = 'bold 11px sans-serif'; g.textAlign = 'left'; g.fillStyle = 'rgba(58,42,16,.7)'; g.textBaseline = 'middle';
+    g.fillText('位', 58, 13);
+    text(g, RANKS[lv].name, 58, 34, 22, '#3a2a10', 'rgba(0,0,0,0)', 'left');
+    g.font = 'bold 11px sans-serif'; g.textAlign = 'right'; g.fillStyle = 'rgba(58,42,16,.7)';
+    g.fillText('スコア', W - 12, 13);
+    text(g, String(score), W - 12, 36, 28, '#3a2a10', 'rgba(0,0,0,0)', 'right');
+    const nx = RANKS[lv + 1];
+    g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#3a2a10';
+    g.fillText(nx ? `${nx.name}まで あと${nx.from - score}` : '最高位！', W / 2 + 8, 30);
   }
 
   function draw() {
@@ -221,6 +252,10 @@
     const sky = g.createLinearGradient(0, 0, 0, GROUND_Y);
     sky.addColorStop(0, '#f9efc9'); sky.addColorStop(1, '#f1d98f');
     g.fillStyle = sky; g.fillRect(-10, -10, W + 20, H + 20);
+
+    // 風船（柱の奥）。力士はこれにつかまって浮いている
+    const lv = rankOf(score);
+    drawBalloon(g, lv);
 
     pipes.forEach(p => drawPipe(g, p));
 
@@ -234,21 +269,17 @@
     g.beginPath(); g.moveTo(0, GROUND_Y); g.lineTo(W, GROUND_Y); g.stroke();
 
     // 力士
-    const lv = rankOf(score);
     const face = state === 'over' ? 'hit' : winT > 0 ? 'win' : 'normal';
-    const ang = state === 'ready' ? 0 : Math.max(-0.5, Math.min(1.1, vy / 700));
+    const ang = state === 'ready' ? 0 : Math.max(-0.15, Math.min(0.35, vy / 1500));
     drawSumo(g, lv, face, PX, y, ang);
 
-    // HUD
-    if (state !== 'over') {
-      text(g, String(score), W / 2, 70, 56);
-      text(g, RANKS[lv].name, W / 2, 112, 22);
-    }
-    if (winT > 0) text(g, '出世！ ' + RANKS[lv].name, W / 2, 170, 30, '#b71c1c');
+    // 上部バー: 位とスコア
+    drawHud(g, lv);
+    if (winT > 0) text(g, '出世！ ' + RANKS[lv].name, W / 2, 100, 30, '#b71c1c');
 
     if (state === 'ready') {
       text(g, 'はなりきしフラッピー', W / 2, 220, 30);
-      text(g, 'タップで ジャンプ', W / 2, 460, 24);
+      text(g, 'タップで ふわっと上昇', W / 2, 460, 24);
       text(g, 'ベスト ' + best, W / 2, 500, 18);
     }
 
