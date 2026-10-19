@@ -219,35 +219,57 @@
     g.fillStyle = color; g.fillText(s, x, yy);
   }
 
-  // 軍配（大きなうちわ）。あおいだ風で力士が浮く
-  function drawGunbai(g) {
-    let hx = PX + 20, hy = y + 6, ang;
-    if (state === 'over') {                 // 落として回転しながら落ちる
-      hx += deadT * 60; hy += deadT * deadT * 500; ang = -0.5 + deadT * 9;
-    } else {
-      // 上昇中は高速でパタパタ、落ちている間はゆっくりひらひら
-      const t = performance.now();
-      if (state === 'play' && (vy < 0 || flapT > 0)) ang = -0.35 + Math.sin(t / 38) * 0.75;
-      else if (state === 'play') ang = -0.7 + Math.sin(t / 150) * 0.25;
-      else ang = -0.9 + Math.sin(t / 300) * 0.06;
+  // 軍配（卵形の板・漆塗り・金の縁・短い柄・紅白の房）。両手に1本ずつ持って羽ばたく
+  function gunbaiShape(g) {
+    // 柄と房（原点が握る位置。板は上向き）
+    g.fillStyle = '#6b4423'; g.strokeStyle = '#2a1a12'; g.lineWidth = 2;
+    g.fillRect(-3, -4, 6, 20); g.strokeRect(-3, -4, 6, 20);
+    g.fillStyle = '#d4af37'; g.fillRect(-4, 14, 8, 4);
+    g.lineWidth = 2.2; g.lineCap = 'round';
+    for (let i = -2; i <= 2; i++) {
+      g.strokeStyle = i % 2 ? '#fff' : '#d32f2f';
+      g.beginPath(); g.moveTo(i * 1.6, 18); g.lineTo(i * 2.4, 26); g.stroke();
     }
-    g.save();
-    g.translate(hx, hy); g.rotate(ang);
-    g.fillStyle = '#7a4a1a'; g.fillRect(-3, 0, 6, 22);                       // 柄
-    g.strokeStyle = '#3a2a10'; g.lineWidth = 2; g.strokeRect(-3, 0, 6, 22);
-    g.fillStyle = '#e8c27a';                                                  // 団扇面
-    g.beginPath(); g.ellipse(0, -22, 20, 26, 0, 0, Math.PI * 2); g.fill(); g.stroke();
-    g.fillStyle = '#c0392b';
-    g.beginPath(); g.arc(0, -22, 8, 0, Math.PI * 2); g.fill();               // 日の丸風の飾り
-    g.strokeStyle = 'rgba(122,74,26,.6)'; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(0, -48); g.lineTo(0, -2); g.stroke();
-    g.restore();
+    g.lineCap = 'butt';
+    // 卵形の板
+    g.beginPath();
+    g.moveTo(0, -2);
+    g.bezierCurveTo(-12, -4, -19, -18, -19, -31);
+    g.bezierCurveTo(-19, -44, -10, -53, 0, -53);
+    g.bezierCurveTo(10, -53, 19, -44, 19, -31);
+    g.bezierCurveTo(19, -18, 12, -4, 0, -2);
+    g.closePath();
+    g.fillStyle = '#2b1810'; g.fill();
+    g.strokeStyle = '#d4af37'; g.lineWidth = 3.2; g.stroke();
+    g.fillStyle = '#d4af37';                                  // 家紋風の金の丸
+    g.beginPath(); g.arc(0, -31, 6, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#2b1810';
+    g.beginPath(); g.arc(0, -31, 2.6, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 2.5; // 漆のつや
+    g.beginPath(); g.moveTo(-12, -22); g.quadraticCurveTo(-14, -36, -8, -45); g.stroke();
+  }
+
+  function drawGunbai(g) {
+    const t = performance.now();
+    let k, spread = 0, drop = 0;   // k: 羽ばたきの角度（0=真上、大きいほど外側へ倒れる）
+    if (state === 'over') { k = 0.9 + deadT * 7; spread = deadT * 70; drop = deadT * deadT * 520; }
+    else if (state === 'play' && (vy < 0 || flapT > 0)) k = 1.0 + Math.sin(t / 38) * 0.85;   // 上昇中はパタパタ
+    else if (state === 'play') k = 0.55 + Math.sin(t / 150) * 0.22;                            // 落下中はひらひら
+    else k = 0.5 + Math.sin(t / 300) * 0.06;
+    for (const side of [-1, 1]) {
+      g.save();
+      g.translate(PX + side * (PLAYER_R + 3) + side * spread, y + 6 + drop);
+      g.scale(side, 1);          // 左は反転
+      g.rotate(k);
+      gunbaiShape(g);
+      g.restore();
+    }
     // あおいだ風
     if (flapT > 0 && state === 'play') {
       g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 3; g.lineCap = 'round';
       for (let i = -1; i <= 1; i++) {
         const wy = y + PLAYER_R + 8 + (1 - flapT / 0.22) * 22;
-        g.beginPath(); g.moveTo(PX - 6 + i * 16, wy); g.lineTo(PX - 6 + i * 16 + 3, wy + 14); g.stroke();
+        g.beginPath(); g.moveTo(PX + i * 16, wy); g.lineTo(PX + i * 16 + 3, wy + 14); g.stroke();
       }
       g.lineCap = 'butt';
     }
