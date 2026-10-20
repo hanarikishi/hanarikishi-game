@@ -18,33 +18,46 @@
     font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
     -webkit-user-select: none; user-select: none; touch-action: none;
   }
+  /* 横画面のゲーム（700x420） */
   canvas {
-    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    display: block; width: min(100vw, calc(100dvh * 700 / 420)); aspect-ratio: 700 / 420;
     box-shadow: 0 0 30px rgba(0, 0, 0, .5); touch-action: none; cursor: pointer;
   }
   /* ゲーム一覧へ戻るボタン（遊んでいないときだけ、画面の左下に出す） */
   #toList {
     position: fixed; z-index: 5; text-decoration: none;
-    left: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px);
-    bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 10px);
+    left: calc(50vw - min(100vw, 100dvh * 700 / 420) / 2 + 10px);
+    bottom: calc(50dvh - min(100dvh, 100vw * 420 / 700) / 2 + 10px);
     padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10;
     background: rgba(255, 248, 220, .94); color: #3a2a10; font-weight: bold; font-size: 14px;
   }
   #toList[hidden] { display: none; }
+  /* スマホを縦に持っているときは、横にしてもらう */
+  #rotate {
+    display: none; position: fixed; inset: 0; z-index: 10; background: #2a1e36; color: #fff8dc;
+    flex-direction: column; justify-content: center; align-items: center; gap: 16px; font-weight: bold; font-size: 20px; text-align: center;
+  }
+  #rotate .phone { font-size: 64px; animation: turn 1.6s ease-in-out infinite; }
+  @keyframes turn { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
 </style>
 </head>
 <body>
-<canvas id="game" width="840" height="1400"></canvas>
+<canvas id="game" width="1400" height="840"></canvas>
 <a id="toList" href="../">◀ ゲーム一覧</a>
-
+<div id="rotate"><div class="phone">📱</div><div>スマホを横にしてね</div></div>
+<script src="core.js"></script>
+<script src="stages.js"></script>
 <script>
 (() => {
   'use strict';
   const toList = document.getElementById('toList');
-  const W = 420, H = 700;
-  const BEST_KEY = 'sumo-shoot-best';
+  const S = window.SHOOT, C = S.C, STAGES = window.SHOOT_STAGES, CHAPTERS = window.SHOOT_CHAPTERS;
+  const W = C.W, H = C.H, FLOOR = C.FLOOR, BALL_R = C.BALL_R, RIM_HALF = C.RIM_HALF;
+  const BEST_KEY = 'sumo-shoot-best';            // エンドレスの最高点（一覧ページに出す）
+  const STAGE_KEY = 'sumo-shoot-stages';         // ステージごとの★
 
-  // 番付（全ゲーム共通）。from は番付が上がる得点
+  // 番付（全ゲーム共通）。エンドレスでは得点、ステージでは★の数で上がる
   const RANKS = [
     { name: '前相撲', from: 0,   body: '#f1efe8', belt: '#111111' },
     { name: '序の口', from: 6,   body: '#f7e3bd', belt: '#111111' },
@@ -72,7 +85,7 @@
     const g = c.getContext('2d'); g.drawImage(img, 0, 0);
     g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, 1024, 1024); return c;
   };
-  const SPR_R = 34, DPR = 2, spriteCache = {};
+  const SPR_R = 30, DPR = 2, spriteCache = {};
   function sprite(body, belt) {
     const key = body + belt;
     if (spriteCache[key]) return spriteCache[key];
@@ -87,11 +100,9 @@
     }
     return (spriteCache[key] = faces);
   }
-  function drawSumo(g, faces, face, x, y, r, sx = 1, sy = 1) {
+  function drawSumo(g, faces, face, x, y, r) {
     const k = r / BODY_R;
-    g.save(); g.translate(x, y); g.scale(sx, sy);
-    g.drawImage(faces[face], -CX * k, -CY * k, 1024 * k, 1024 * k);
-    g.restore();
+    g.drawImage(faces[face], x - CX * k, y - CY * k, 1024 * k, 1024 * k);
   }
 
   // ---- 効果音（ブラウザの中で合成） ----
@@ -121,142 +132,133 @@
   const SFX = {
     pull: () => tone(300, 0.05, 'triangle', 0.05),
     throw: () => { noise(0.18, 0.08, 900); tone(220, 0.12, 'sine', 0.1, 1.8); },
-    bounce: v => tone(110, 0.12, 'sine', Math.min(0.3, 0.06 + v * 0.0003), 0.7),
+    floor: v => tone(110, 0.12, 'sine', Math.min(0.3, 0.06 + v * 0.0003), 0.7),
     rim: v => { tone(880, 0.18, 'square', Math.min(0.08, 0.02 + v * 0.00008), 0.9); tone(1320, 0.12, 'triangle', 0.05); },
     board: v => { tone(160, 0.1, 'square', Math.min(0.1, 0.03 + v * 0.0001), 0.8); noise(0.06, 0.06, 400); },
+    wall: v => { tone(200, 0.08, 'triangle', Math.min(0.12, 0.03 + v * 0.0001), 0.7); noise(0.05, 0.05, 700); },
+    zabuton: () => tone(300, 0.25, 'sine', 0.18, 2.2),
     swish: () => noise(0.35, 0.16, 3000, 0.7),
     score: k => { tone(660, 0.12, 'triangle', 0.16); tone(880, 0.18, 'triangle', 0.16, 1, 0.08); if (k) tone(1175, 0.25, 'triangle', 0.16, 1, 0.16); noise(0.6, 0.08, 500); },
-    miss: () => { tone(300, 0.25, 'sawtooth', 0.06, 0.6); },
+    miss: () => tone(300, 0.25, 'sawtooth', 0.06, 0.6),
+    star: k => tone(880 + k * 220, 0.18, 'triangle', 0.16),
     rankup: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.2, 'triangle', 0.15, 1, i * 0.1)); },
     over: () => { tone(392, 0.3, 'triangle', 0.12, 1); tone(330, 0.3, 'triangle', 0.12, 1, 0.25); tone(262, 0.5, 'triangle', 0.12, 1, 0.5); },
+    tap: () => tone(700, 0.05, 'triangle', 0.08),
   };
 
-  // ================= コートと物理 =================
-  const FLOOR = 628, WALL_X = 404, BALL_R = 15, G = 1500;
-  const RIM_HALF = 31;                     // ゴールの内のりの半分
-  const MAX_SPEED = 1250, PULL_K = 6.2;
-  let hoop, shooter;
-  // ゴール: ボード（右の壁）にくっついている。y は高さ、moveA は上下に動く幅
-  function placeHoop(n) {
-    const hy = 230 + Math.random() * Math.min(170, 60 + n * 8);
-    hoop = { x: WALL_X - 10 - RIM_HALF, y: hy, baseY: hy, moveA: n >= 12 ? Math.min(70, (n - 10) * 4) : 0, ph: Math.random() * 6, sway: 0 };
-  }
-  function placeShooter(n) {
-    const far = Math.min(1, n / 20);
-    shooter = { x: 70 + Math.random() * (120 - far * 60), y: FLOOR };
-  }
-  const ballHome = () => ({ x: shooter.x + 14, y: shooter.y - 74 });
-  const rimPts = () => [{ x: hoop.x - RIM_HALF, y: hoop.y }, { x: hoop.x + RIM_HALF, y: hoop.y }];
-
-  // ボールを1歩すすめる。ぶつかったら kind を返す（ガイドの計算と本物の両方で使う）
-  function stepBall(b, dt, onHit) {
-    b.vy += G * dt; b.x += b.vx * dt; b.y += b.vy * dt;
-    // 床
-    if (b.y > FLOOR - BALL_R) { const v = b.vy; b.y = FLOOR - BALL_R; b.vy = -b.vy * 0.62; b.vx *= 0.85; if (onHit) onHit('floor', Math.abs(v), b); }
-    // 右の壁（ボード）
-    if (b.x > WALL_X - BALL_R) { const v = b.vx; b.x = WALL_X - BALL_R; b.vx = -b.vx * 0.55; if (onHit) onHit('board', Math.abs(v), b); }
-    // ゴールの輪（前と奥の2点）
-    for (const p of rimPts()) {
-      const dx = b.x - p.x, dy = b.y - p.y, d = Math.hypot(dx, dy), min = BALL_R + 3;
-      if (d < min && d > 0) {
-        const nx = dx / d, ny = dy / d, vn = b.vx * nx + b.vy * ny;
-        b.x = p.x + nx * min; b.y = p.y + ny * min;
-        if (vn < 0) { b.vx -= 1.6 * vn * nx; b.vy -= 1.6 * vn * ny; b.vx *= 0.92; if (onHit) onHit('rim', Math.abs(vn), b); }
-      }
-    }
-  }
-  // 引っぱり具合から、最初にどこかへ当たるまでの軌道
-  function guidePath(vx, vy) {
-    const b = { x: ballHome().x, y: ballHome().y, vx, vy }, pts = [[b.x, b.y]];
-    let hit = null;
-    for (let i = 0; i < 400 && !hit; i++) {
-      stepBall(b, 1 / 120, (kind) => { hit = kind; });
-      if (i % 3 === 0 || hit) pts.push([b.x, b.y]);
-      if (b.x < -40 || b.y > H + 40) break;
-    }
-    return { pts, hit };
-  }
-
-  // 打った球が入るかを最後まで計算する（テスト用）
-  function simulate(vx, vy) {
-    const b = { x: ballHome().x, y: ballHome().y, vx, vy }, info = { touched: false, scored: false };
-    for (let i = 0; i < 4.5 * 240 && !info.scored; i++) {
-      const py = b.y;
-      stepBall(b, 1 / 240, k => { if (k !== 'floor') info.touched = true; });
-      if (py < hoop.y && b.y >= hoop.y && b.vy > 0 && b.x > hoop.x - RIM_HALF + 4 && b.x < hoop.x + RIM_HALF - 4) info.scored = true;
-      if (b.x < -60) break;
-    }
-    return info;
+  // ---- 進み具合 ----
+  let progress = {};
+  try { progress = JSON.parse(localStorage.getItem(STAGE_KEY)) || {}; } catch {}
+  let best = 0;
+  try { best = +localStorage.getItem(BEST_KEY) || 0; } catch {}
+  const totalStars = () => Object.values(progress).reduce((s, v) => s + v, 0);
+  const unlocked = i => i === 0 || progress[i - 1] > 0;
+  function saveStage(i, st) {
+    if ((progress[i] || 0) >= st) return;
+    progress[i] = st;
+    try { localStorage.setItem(STAGE_KEY, JSON.stringify(progress)); } catch {}
   }
 
   // ================= 状態 =================
   const cv = document.getElementById('game');
   const ctx = cv.getContext('2d');
   ctx.scale(cv.width / W, cv.height / H);
-  let state = 'title', t = 0, score, best, lives, streak, shots, ball, aim, shotInfo, pops, parts, shake, flash, overT, jumpT, rankFlash, lastLv;
-  try { best = +localStorage.getItem(BEST_KEY) || 0; } catch { best = 0; }
+  // scene: title / select / play / clear / fail / over
+  let scene = 'title', mode = 'stage', t = 0, page = 0;
+  let stage, stageNo, stageT, balls, shotNo, ball, aim, shot, pops, parts, shake, flash, endT, jumpT, score, streak, rankFlash, lastLv, starsGot, starShown;
 
-  function reset() {
-    score = 0; lives = 3; streak = 0; shots = 0; pops = []; parts = []; shake = 0; flash = 0; jumpT = 0; rankFlash = null; lastLv = 0;
-    placeHoop(0); placeShooter(0); newBall();
-    state = 'play';
+  function playStage(i) {
+    mode = 'stage'; stageNo = i; stage = STAGES[i]; balls = 3; shotNo = 0;
+    begin();
+  }
+  function playEndless() {
+    mode = 'endless'; score = 0; streak = 0; balls = 3; shotNo = 0; lastLv = 0;
+    stage = endlessStage(0);
+    begin();
+  }
+  function begin() {
+    stageT = 0; pops = []; parts = []; shake = 0; flash = 0; endT = 0; jumpT = 0; rankFlash = null; starShown = 0;
+    newBall(); scene = 'play';
+  }
+  // エンドレスのゴールの置き方（点が増えると遠く・高く・動く）
+  function endlessStage(n) {
+    const far = Math.min(1, n / 30);
+    return { shooter: Math.round(50 + Math.random() * (140 - far * 80)), walls: [], pegs: [],
+      hoop: { x: Math.round(480 + Math.random() * 150), y: Math.round(130 + Math.random() * (100 + far * 80)), board: 'R',
+        dy: n >= 12 ? Math.min(70, (n - 10) * 3) : 0, period: n >= 12 ? 3.2 : 0 } };
   }
   function newBall() {
-    const h = ballHome();
+    const h = S.ballHome(stage);
     ball = { x: h.x, y: h.y, vx: 0, vy: 0, spin: 0, ang: 0, flying: false, trail: [] };
-    aim = null; shotInfo = null;
+    aim = null; shot = null;
   }
 
-  function shoot(vx, vy) {
-    ball.vx = vx; ball.vy = vy; ball.flying = true; ball.spin = -vx * 0.02;
-    shotInfo = { t: 0, touched: false, board: false, scored: false, prevY: ball.y, done: false, restT: 0 };
-    jumpT = 0.35; shots++;
+  function shoot(v) {
+    const h = S.ballHome(stage);
+    ball.x = h.x; ball.y = h.y;          // 構えて揺れていても、ガイドと同じ位置から打つ
+    acc = 0;
+    ball.vx = v.vx; ball.vy = v.vy; ball.flying = true; ball.spin = v.vx * 0.02;
+    shot = { t: 0, touched: false, board: false, scored: false, done: false, restT: 0 };
+    jumpT = 0.35; shotNo++;
     SFX.throw();
   }
 
   function onHit(kind, v) {
-    if (kind === 'rim') { SFX.rim(v); hoop.sway = Math.min(1, hoop.sway + v / 600); shotInfo.touched = true; if (v > 300) shake = 0.12; }
-    else if (kind === 'board') { SFX.board(v); shotInfo.touched = true; shotInfo.board = true; }
-    else if (kind === 'floor' && v > 120) SFX.bounce(v);
+    if (!shot) return;
+    if (kind !== 'floor') shot.touched = true;
+    if (kind === 'rim') { SFX.rim(v); hoopSway = Math.min(1, hoopSway + v / 600); if (v > 300) shake = 0.12; }
+    else if (kind === 'board') { SFX.board(v); shot.board = true; }
+    else if (kind === 'zabuton') SFX.zabuton();
+    else if (kind === 'wall' || kind === 'peg') { if (v > 80) SFX.wall(v); }
+    else if (kind === 'floor' && v > 120) SFX.floor(v);
   }
+  let hoopSway = 0;
 
-  function scored() {
-    const info = shotInfo; info.scored = true;
-    streak++;
-    let pts = 2, label = 'ナイス！';
-    if (!info.touched) { pts = 3; label = 'スウィッシュ！'; }
-    else if (info.board && !info.rimOnly) label = 'バンク！';
-    const bonus = streak >= 3 ? Math.min(3, Math.floor(streak / 3)) : 0;
-    pts += bonus;
-    score += pts;
-    hoop.sway = 1;
-    pops.push({ x: hoop.x, y: hoop.y - 40, text: `+${pts}`, sub: label + (bonus ? `　${streak}連続！` : ''), t: 0 });
-    SFX.swish(); SFX.score(!info.touched);
-    for (let i = 0; i < 16; i++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2, s = 120 + Math.random() * 220; parts.push({ x: hoop.x, y: hoop.y + 20, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, life: 0.9, c: ['#ffd54f', '#ff7043', '#ffffff', '#81d4fa'][i % 4] }); }
-    const lv = rankOf(score);
-    if (lv > lastLv) {
-      lastLv = lv; rankFlash = { text: `${RANKS[lv].name}に昇進！`, t: 0 }; SFX.rankup(); flash = 0.25;
-      for (let i = 0; i < 40; i++) parts.push({ x: W / 2, y: 200, vx: (Math.random() - 0.5) * 600, vy: -Math.random() * 400, t: 0, life: 1.6, c: ['#c62828', '#7b1fa2', '#2e7d32', '#ef6c00'][i % 4], zab: true, r: Math.random() * 6 });
+  function scored(hp) {
+    shot.scored = true; hoopSway = 1;
+    SFX.swish(); SFX.score(!shot.touched);
+    for (let i = 0; i < 16; i++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2, s = 120 + Math.random() * 220; parts.push({ x: hp.x, y: hp.y + 20, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, life: 0.9, c: ['#ffd54f', '#ff7043', '#ffffff', '#81d4fa'][i % 4] }); }
+    const label = !shot.touched ? 'スウィッシュ！' : shot.board ? 'バンク！' : 'ナイス！';
+    if (mode === 'endless') {
+      streak++;
+      const bonus = streak >= 3 ? Math.min(3, Math.floor(streak / 3)) : 0, pts = (shot.touched ? 2 : 3) + bonus;
+      score += pts;
+      pops.push({ x: hp.x - 40, y: hp.y - 40, text: `+${pts}`, sub: label + (bonus ? `　${streak}連続！` : ''), t: 0 });
+      const lv = rankOf(score);
+      if (lv > lastLv) { lastLv = lv; rankFlash = { text: `${RANKS[lv].name}に昇進！`, t: 0 }; SFX.rankup(); flash = 0.25; confetti(); }
+    } else {
+      pops.push({ x: hp.x - 40, y: hp.y - 40, text: label, sub: '', t: 0 });
     }
+  }
+  function confetti() {
+    for (let i = 0; i < 40; i++) parts.push({ x: W / 2, y: 120, vx: (Math.random() - 0.5) * 700, vy: -Math.random() * 400, t: 0, life: 1.8, c: ['#c62828', '#7b1fa2', '#2e7d32', '#ef6c00'][i % 4], zab: true, r: Math.random() * 6 });
   }
 
   function endShot() {
-    shotInfo.done = true;
-    if (shotInfo.scored) {
-      placeHoop(score); placeShooter(score);
+    shot.done = true;
+    if (mode === 'stage') {
+      if (shot.scored) {
+        starsGot = 4 - shotNo; saveStage(stageNo, starsGot);
+        confetti(); flash = 0.2;
+        setTimeout(() => { scene = 'clear'; endT = 0; }, 500);
+        return;
+      }
+      balls--;
+      pops.push({ x: ball.x, y: Math.min(ball.y, FLOOR - 40) - 20, text: 'ミス…', sub: '', t: 0, miss: true }); SFX.miss();
+      if (balls <= 0) { setTimeout(() => { scene = 'fail'; endT = 0; SFX.over(); }, 500); return; }
     } else {
-      streak = 0; lives--;
-      pops.push({ x: ball.x, y: Math.min(ball.y, FLOOR - 40) - 20, text: 'ミス…', sub: '', t: 0, miss: true });
-      SFX.miss();
-      if (lives <= 0) return gameOver();
+      if (shot.scored) { stage = endlessStage(score); stageT = 0; }
+      else {
+        streak = 0; balls--;
+        pops.push({ x: ball.x, y: Math.min(ball.y, FLOOR - 40) - 20, text: 'ミス…', sub: '', t: 0, miss: true }); SFX.miss();
+        if (balls <= 0) {
+          if (score > best) { best = score; try { localStorage.setItem(BEST_KEY, best); } catch {} }
+          setTimeout(() => { scene = 'over'; endT = 0; SFX.over(); }, 500);
+          return;
+        }
+      }
     }
-    setTimeout(() => { if (state === 'play') newBall(); }, 350);
-  }
-
-  function gameOver() {
-    state = 'over'; overT = 0;
-    if (score > best) { best = score; try { localStorage.setItem(BEST_KEY, best); } catch {} }
-    SFX.over();
+    setTimeout(() => { if (scene === 'play') newBall(); }, 350);
   }
 
   // ================= 入力 =================
@@ -265,72 +267,67 @@
   cv.addEventListener('pointerdown', e => {
     e.preventDefault(); audio();
     const [x, y] = pos(e);
-    const b = buttons.find(b => x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h);
-    if (b) return b.fn();
-    if (state === 'title') { reset(); return; }
-    if (state === 'over') { if (overT > 0.8) reset(); return; }
-    if (state === 'play' && ball && !ball.flying) { aim = { sx: x, sy: y, x, y }; cv.setPointerCapture(e.pointerId); SFX.pull(); }
+    for (let i = buttons.length - 1; i >= 0; i--) { const b = buttons[i]; if (x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h) { SFX.tap(); return b.fn(); } }
+    if (scene === 'rules') { scene = 'title'; return; }
+    if (scene === 'over') { if (endT > 0.8) playEndless(); return; }
+    if (scene === 'play' && ball && !ball.flying && y > 60) { aim = { sx: x, sy: y, x, y }; cv.setPointerCapture(e.pointerId); SFX.pull(); }
   });
-  cv.addEventListener('pointermove', e => {
-    if (!aim) return;
-    const [x, y] = pos(e); aim.x = x; aim.y = y;
-  });
-  const release = e => {
-    if (!aim) return;
-    const v = aimVel(); aim = null;
-    if (v) shoot(v.vx, v.vy);
-  };
-  cv.addEventListener('pointerup', release);
+  cv.addEventListener('pointermove', e => { if (!aim) return; const [x, y] = pos(e); aim.x = x; aim.y = y; });
+  cv.addEventListener('pointerup', () => { if (!aim) return; const v = aimVel(); aim = null; if (v) shoot(v); });
   cv.addEventListener('pointercancel', () => { aim = null; });
-  // 引っぱった向きの反対へ打つ（パチンコと同じ）
-  function aimVel() {
-    if (!aim) return null;
-    let dx = aim.sx - aim.x, dy = aim.sy - aim.y;
-    const len = Math.hypot(dx, dy);
-    if (len < 18) return null;
-    let sp = Math.min(MAX_SPEED, len * PULL_K);
-    return { vx: dx / len * sp, vy: dy / len * sp, power: sp / MAX_SPEED };
-  }
+  const aimVel = () => aim ? S.aimToVel(aim.sx - aim.x, aim.sy - aim.y) : null;
 
   // ================= 更新 =================
+  let acc = 0;
   function update(dt) {
     t += dt;
-    toList.hidden = !(state === 'title' || state === 'over');
-    if (state === 'over') overT += dt;
-    if (state === 'title') return;
-    // ゴールは点が増えると上下に動く
-    hoop.y = hoop.baseY + Math.sin(t * 1.3 + hoop.ph) * hoop.moveA;
-    hoop.sway = Math.max(0, hoop.sway - dt * 1.5);
+    toList.hidden = !(scene === 'title' || scene === 'select' || scene === 'over' || scene === 'rules');
+    if (scene !== 'play' && scene !== 'clear' && scene !== 'fail' && scene !== 'over') return;
+    endT += dt;
+    stageT += dt;
+    hoopSway = Math.max(0, hoopSway - dt * 1.5);
     jumpT = Math.max(0, jumpT - dt);
     shake = Math.max(0, shake - dt); flash = Math.max(0, flash - dt);
     pops.forEach(p => { p.t += dt; }); pops = pops.filter(p => p.t < 1.2);
     parts.forEach(p => { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 700 * dt; if (p.r !== undefined) p.r += dt * 6; });
     parts = parts.filter(p => p.t < p.life);
     if (rankFlash) { rankFlash.t += dt; if (rankFlash.t > 1.8) rankFlash = null; }
-    if (state !== 'play' || !ball) return;
-    if (!ball.flying) { const h = ballHome(); ball.x = h.x; ball.y = h.y + Math.sin(t * 4) * 2; return; }
-    // 本物のボール
-    const n = 4;
-    for (let k = 0; k < n; k++) {
+    if (scene === 'clear') while (starShown < starsGot && endT >= 0.5 + starShown * 0.25) SFX.star(starShown++);
+    if (!ball) return;
+    if (!ball.flying) { const h = S.ballHome(stage); ball.x = h.x; ball.y = h.y + Math.sin(t * 4) * 2; return; }
+    acc += dt;
+    while (acc >= C.DT) {
+      acc -= C.DT;
       const py = ball.y;
-      stepBall(ball, dt / n, onHit);
-      // 輪を上から下へ通ったら入った
-      if (!shotInfo.scored && py < hoop.y && ball.y >= hoop.y && ball.vy > 0 && ball.x > hoop.x - RIM_HALF + 4 && ball.x < hoop.x + RIM_HALF - 4) scored();
+      const hp = S.step(ball, stage, stageT, onHit);
+      if (!shot.scored && S.through(py, ball, hp)) scored(hp);
     }
     ball.ang += ball.spin * dt;
     ball.trail.push([ball.x, ball.y]); if (ball.trail.length > 10) ball.trail.shift();
-    shotInfo.t += dt;
-    const slow = Math.hypot(ball.vx, ball.vy) < 60 && ball.y > FLOOR - BALL_R - 2;
-    if (slow) shotInfo.restT += dt;
-    if (!shotInfo.done && (ball.x < -60 || shotInfo.t > (shotInfo.scored ? 1.2 : 4.5) || shotInfo.restT > 0.4 || (shotInfo.scored && ball.y > FLOOR - BALL_R - 4 && shotInfo.t > 0.6))) endShot();
+    shot.t += dt;
+    if (Math.hypot(ball.vx, ball.vy) < 60 && ball.y > FLOOR - BALL_R - 2) shot.restT += dt;
+    if (!shot.done && (ball.x < -50 || shot.t > (shot.scored ? 0.9 : 5) || shot.restT > 0.4)) endShot();
   }
 
   // ================= 描画 =================
   function text(g, s, x, y, size, color = '#fff', stroke = 'rgba(0,0,0,.55)', align = 'center') {
     g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`; g.textAlign = align; g.textBaseline = 'middle';
-    g.lineJoin = 'round'; g.lineWidth = size / 4; g.strokeStyle = stroke; g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
+    if (stroke) { g.lineJoin = 'round'; g.lineWidth = size / 4; g.strokeStyle = stroke; g.strokeText(s, x, y); }
+    g.fillStyle = color; g.fillText(s, x, y);
   }
   function rrect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+  function button(g, x, y, w, h, fn, label, color = '#fff8dc', size = 18) {
+    rrect(g, x, y + 3, w, h, Math.min(14, h / 2)); g.fillStyle = 'rgba(0,0,0,.35)'; g.fill();
+    rrect(g, x, y, w, h, Math.min(14, h / 2)); g.fillStyle = color; g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#3a2a10'; g.stroke();
+    if (typeof label === 'function') label(x + w / 2, y + h / 2); else text(g, label, x + w / 2, y + h / 2, size, '#3a2a10', null);
+    buttons.push({ x, y, w, h, fn });
+  }
+  function star(g, x, y, r, filled) {
+    g.beginPath();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    g.closePath(); g.fillStyle = filled ? '#ffc400' : 'rgba(255,255,255,.18)'; g.fill();
+    g.lineWidth = r * 0.14; g.lineJoin = 'round'; g.strokeStyle = filled ? '#b26a00' : 'rgba(255,255,255,.3)'; g.stroke();
+  }
 
   // 背景（国技館ふうの体育館）。一度だけ描いてとっておく
   let bgCanvas = null;
@@ -338,13 +335,12 @@
     if (bgCanvas) return bgCanvas;
     bgCanvas = document.createElement('canvas'); bgCanvas.width = W * 2; bgCanvas.height = H * 2;
     const g = bgCanvas.getContext('2d'); g.scale(2, 2);
-    // 奥の壁
     const grd = g.createLinearGradient(0, 0, 0, FLOOR);
     grd.addColorStop(0, '#3b2a4a'); grd.addColorStop(0.55, '#5a3d55'); grd.addColorStop(1, '#7a5a4a');
     g.fillStyle = grd; g.fillRect(0, 0, W, FLOOR);
-    // 客席（ぼんやりした観客）
-    for (let row = 0; row < 6; row++) {
-      const y = 300 + row * 34;
+    // 客席
+    for (let row = 0; row < 5; row++) {
+      const y = 200 + row * 34;
       g.fillStyle = `rgba(20,10,25,${0.25 + row * 0.06})`; g.fillRect(0, y + 10, W, 30);
       for (let x = 6 + (row % 2) * 9; x < W; x += 18) {
         const c = ['#c98b6b', '#e8b38f', '#9c6b54', '#f0c9a8'][(x * 7 + row * 3) % 4];
@@ -352,204 +348,275 @@
         g.fillStyle = c; g.globalAlpha = 0.35 + row * 0.08; g.beginPath(); g.arc(x, y + 8, 5, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
       }
     }
-    // 吊り屋根（国技館の屋根）と四色の房
+    // 吊り屋根と四色の房
     g.fillStyle = '#2b1d14';
-    g.beginPath(); g.moveTo(20, 70); g.lineTo(W - 20, 70); g.lineTo(W - 50, 46); g.lineTo(50, 46); g.closePath(); g.fill();
-    g.fillStyle = '#4e3524'; g.fillRect(30, 70, W - 60, 22);
-    g.fillStyle = '#7b1f1f'; g.fillRect(30, 92, W - 60, 8);
-    for (let x = 40; x < W - 30; x += 22) { g.fillStyle = 'rgba(255,215,120,.6)'; g.fillRect(x, 76, 10, 3); }
-    [['#2e7d32', 40], ['#c62828', W - 40]].forEach(([c, x]) => {
-      g.fillStyle = c; g.beginPath(); g.moveTo(x - 7, 100); g.lineTo(x + 7, 100); g.lineTo(x + 10, 150); g.lineTo(x - 10, 150); g.closePath(); g.fill();
-      g.beginPath(); g.arc(x, 100, 8, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.moveTo(60, 40); g.lineTo(W - 60, 40); g.lineTo(W - 100, 18); g.lineTo(100, 18); g.closePath(); g.fill();
+    g.fillStyle = '#4e3524'; g.fillRect(70, 40, W - 140, 18);
+    g.fillStyle = '#7b1f1f'; g.fillRect(70, 58, W - 140, 6);
+    for (let x = 80; x < W - 70; x += 22) { g.fillStyle = 'rgba(255,215,120,.6)'; g.fillRect(x, 45, 10, 3); }
+    [['#2e7d32', 80], ['#c62828', W - 80], ['#1565c0', 200], ['#f5f5f5', W - 200]].forEach(([c, x]) => {
+      g.fillStyle = c; g.beginPath(); g.moveTo(x - 6, 64); g.lineTo(x + 6, 64); g.lineTo(x + 9, 104); g.lineTo(x - 9, 104); g.closePath(); g.fill();
+      g.beginPath(); g.arc(x, 64, 7, 0, Math.PI * 2); g.fill();
     });
     // のぼり
-    [['#1565c0', 70], ['#c62828', 120], ['#2e7d32', 300], ['#f9a825', 350]].forEach(([c, x]) => {
-      g.fillStyle = c; g.fillRect(x, 150, 22, 120);
-      g.fillStyle = 'rgba(255,255,255,.8)'; for (let k = 0; k < 4; k++) g.fillRect(x + 8, 162 + k * 26, 6, 16);
-      g.fillStyle = '#ddd'; g.fillRect(x - 2, 146, 26, 4);
+    [['#1565c0', 26], ['#c62828', 300], ['#2e7d32', 380], ['#f9a825', 454]].forEach(([c, x]) => {
+      g.fillStyle = c; g.fillRect(x, 96, 20, 96);
+      g.fillStyle = 'rgba(255,255,255,.8)'; for (let k = 0; k < 3; k++) g.fillRect(x + 7, 106 + k * 28, 6, 18);
+      g.fillStyle = '#ddd'; g.fillRect(x - 2, 92, 24, 4);
     });
-    // 床（板張り）
+    // 床
     const fg = g.createLinearGradient(0, FLOOR, 0, H);
     fg.addColorStop(0, '#d7a565'); fg.addColorStop(1, '#a87638');
     g.fillStyle = fg; g.fillRect(0, FLOOR, W, H - FLOOR);
     g.strokeStyle = 'rgba(90,50,10,.25)'; g.lineWidth = 1;
-    for (let y = FLOOR + 10; y < H; y += 12) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
-    for (let k = 0; k < 30; k++) { const y = FLOOR + 10 + (k % 6) * 12, x = (k * 97) % W; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 12); g.stroke(); }
+    for (let y = FLOOR + 9; y < H; y += 9) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+    for (let k = 0; k < 40; k++) { const y = FLOOR + 9 + (k % 4) * 9, x = (k * 131) % W; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 9); g.stroke(); }
     g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(0, FLOOR, W, 3);
-    // 床の白線
-    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 3;
-    g.beginPath(); g.ellipse(WALL_X, FLOOR + 30, 190, 22, 0, Math.PI * 0.5, Math.PI * 1.5); g.stroke();
     return bgCanvas;
   }
 
+  function drawWalls(g) {
+    for (const [x1, y1, x2, y2, type] of stage.walls) {
+      g.lineCap = 'round';
+      if (type === 'z') {
+        g.strokeStyle = '#4a0f63'; g.lineWidth = C.WALL_T * 2 + 6; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+        g.strokeStyle = '#8e24aa'; g.lineWidth = C.WALL_T * 2 + 2; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+        g.fillStyle = '#ffd54f'; for (const k of [0.25, 0.75]) { g.beginPath(); g.arc(x1 + (x2 - x1) * k, y1 + (y2 - y1) * k, 3, 0, Math.PI * 2); g.fill(); }
+      } else {
+        g.strokeStyle = '#4a2f14'; g.lineWidth = C.WALL_T * 2 + 4; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+        g.strokeStyle = '#a07850'; g.lineWidth = C.WALL_T * 2; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+      }
+    }
+    for (const [x, y, r] of stage.pegs) {
+      g.fillStyle = '#a07850'; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      g.lineWidth = 2; g.strokeStyle = '#4a2f14'; g.stroke();
+      g.fillStyle = 'rgba(255,255,255,.25)'; g.beginPath(); g.arc(x - r * 0.3, y - r * 0.3, r * 0.35, 0, Math.PI * 2); g.fill();
+    }
+  }
+
   function drawHoop(g, front) {
-    const { x, y } = hoop, L = x - RIM_HALF, R = x + RIM_HALF;
+    const hp = S.hoopAt(stage, stageT), bs = S.boardSeg(stage, hp), { x, y } = hp, L = x - RIM_HALF, R = x + RIM_HALF;
     if (!front) {
-      // ボード（右の壁についている）
-      g.fillStyle = '#f5f5f5'; rrect(g, WALL_X - 4, y - 112, 16, 140, 4); g.fill();
-      g.strokeStyle = '#c62828'; g.lineWidth = 3; g.strokeRect(WALL_X - 2, y - 60, 10, 50);
-      g.fillStyle = '#9e9e9e'; g.fillRect(WALL_X + 8, y - 112, 12, 140);
-      // 奥の輪
-      g.strokeStyle = '#b5410f'; g.lineWidth = 4; g.beginPath(); g.ellipse(x, y, RIM_HALF, 7, 0, Math.PI, Math.PI * 2); g.stroke();
+      if (bs) {
+        const bx = bs[0];
+        g.fillStyle = '#9e9e9e'; g.fillRect(bx + 4, bs[1] + 10, 8, H);
+        g.fillStyle = '#f5f5f5'; rrect(g, bx - 5, bs[1], 12, bs[3] - bs[1], 3); g.fill();
+        g.strokeStyle = '#c62828'; g.lineWidth = 2.5; g.strokeRect(bx - 3, y - 50, 8, 42);
+      }
+      g.strokeStyle = '#b5410f'; g.lineWidth = 4; g.beginPath(); g.ellipse(x, y, RIM_HALF, 6, 0, Math.PI, Math.PI * 2); g.stroke();
       return;
     }
-    // ネット（入ると揺れる）
-    const sw = hoop.sway, wob = Math.sin(t * 25) * sw * 5;
-    g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 1.6;
-    const rows = 4, nh = 42 + sw * 10;
+    const sw = hoopSway, wob = Math.sin(t * 25) * sw * 5, nh = 38 + sw * 10;
+    g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 1.5;
     for (let i = 0; i <= 6; i++) {
       const top = L + (R - L) * i / 6, bot = x - RIM_HALF * 0.55 + RIM_HALF * 1.1 * i / 6 + wob;
       g.beginPath(); g.moveTo(top, y + 2); g.quadraticCurveTo((top + bot) / 2 + wob, y + nh * 0.5, bot, y + nh); g.stroke();
     }
-    for (let r = 1; r <= rows; r++) {
-      const k = r / rows, yy = y + nh * k, half = RIM_HALF * (1 - k * 0.45);
-      g.beginPath(); g.ellipse(x + wob * k, yy, half, 4, 0, 0, Math.PI); g.stroke();
-    }
-    // 手前の輪
-    g.strokeStyle = '#e65100'; g.lineWidth = 5; g.beginPath(); g.ellipse(x, y, RIM_HALF, 7, 0, 0, Math.PI); g.stroke();
+    for (let r = 1; r <= 4; r++) { const k = r / 4, half = RIM_HALF * (1 - k * 0.45); g.beginPath(); g.ellipse(x + wob * k, y + nh * k, half, 3.5, 0, 0, Math.PI); g.stroke(); }
+    g.strokeStyle = '#e65100'; g.lineWidth = 4.5; g.beginPath(); g.ellipse(x, y, RIM_HALF, 6, 0, 0, Math.PI); g.stroke();
     g.fillStyle = '#e65100'; g.beginPath(); g.arc(L, y, 3.5, 0, Math.PI * 2); g.fill();
-    g.fillRect(R, y - 3, WALL_X - R, 6);
+    if (bs) g.fillRect(Math.min(R, bs[0]), y - 3, Math.abs(bs[0] - R), 6);
+    if (stage.hoop.period) { g.fillStyle = 'rgba(255,224,130,.8)'; text(g, stage.hoop.dy ? '⇕' : '⇔', x, y - 108, 14, '#ffe082'); }
   }
 
-  function drawBall(g, x, y, ang, alpha = 1) {
+  function drawBall(g, x, y, ang, alpha = 1, r = BALL_R) {
     g.save(); g.globalAlpha = alpha; g.translate(x, y); g.rotate(ang);
-    const grd = g.createRadialGradient(-5, -6, 2, 0, 0, BALL_R);
+    const grd = g.createRadialGradient(-r * 0.3, -r * 0.4, 1, 0, 0, r);
     grd.addColorStop(0, '#ffb35c'); grd.addColorStop(1, '#e0601a');
-    g.fillStyle = grd; g.beginPath(); g.arc(0, 0, BALL_R, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = '#3a1c08'; g.lineWidth = 1.6;
-    g.beginPath(); g.arc(0, 0, BALL_R, 0, Math.PI * 2); g.stroke();
-    g.beginPath(); g.moveTo(-BALL_R, 0); g.lineTo(BALL_R, 0); g.moveTo(0, -BALL_R); g.lineTo(0, BALL_R); g.stroke();
-    g.beginPath(); g.arc(-BALL_R * 1.25, 0, BALL_R * 0.9, -0.9, 0.9); g.stroke();
-    g.beginPath(); g.arc(BALL_R * 1.25, 0, BALL_R * 0.9, Math.PI - 0.9, Math.PI + 0.9); g.stroke();
+    g.fillStyle = grd; g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#3a1c08'; g.lineWidth = 1.4;
+    g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.moveTo(-r, 0); g.lineTo(r, 0); g.moveTo(0, -r); g.lineTo(0, r); g.stroke();
+    g.beginPath(); g.arc(-r * 1.25, 0, r * 0.9, -0.9, 0.9); g.stroke();
+    g.beginPath(); g.arc(r * 1.25, 0, r * 0.9, Math.PI - 0.9, Math.PI + 0.9); g.stroke();
     g.restore();
   }
 
+  function shooterRank() { return mode === 'endless' ? rankOf(score) : Math.min(10, Math.floor(totalStars() / 22)); }
   function drawShooter(g) {
-    const lv = rankOf(score), rk = RANKS[lv];
-    // 打つ瞬間にぴょんと跳ぶ。引っぱっている間はぐっと縮む
+    const rk = RANKS[shooterRank()], x = stage.shooter;
     let sy = 1, sx = 1, up = 0;
-    if (jumpT > 0) { const k = jumpT / 0.35; up = Math.sin(k * Math.PI) * 26; sy = 1 + Math.sin(k * Math.PI) * 0.08; sx = 2 - sy; }
+    if (jumpT > 0) { const k = jumpT / 0.35; up = Math.sin(k * Math.PI) * 24; sy = 1 + Math.sin(k * Math.PI) * 0.08; sx = 2 - sy; }
     const v = aimVel(); if (v) { sy = 1 - v.power * 0.12; sx = 1 + v.power * 0.1; }
-    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(shooter.x, FLOOR + 4, 30 - up * 0.3, 7, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(x, FLOOR + 4, 28 - up * 0.3, 6, 0, 0, Math.PI * 2); g.fill();
     let face = 'normal';
-    if (shotInfo && shotInfo.scored) face = 'win';
-    else if (shotInfo && shotInfo.done && !shotInfo.scored) face = 'hit';
-    const r = 32;
-    g.save(); g.translate(shooter.x, FLOOR - up); g.scale(sx, sy);
+    if (shot && shot.scored) face = 'win'; else if (shot && shot.done) face = 'hit';
+    const r = 28;
+    g.save(); g.translate(x, FLOOR - up); g.scale(sx, sy);
     drawSumo(g, sprite(rk.body, rk.belt), face, 0, -r * 1.05, r);
     g.restore();
   }
 
   function drawGuide(g) {
-    const v = aimVel();
     if (!aim) return;
-    // 引っぱっている線
+    const v = aimVel();
     g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 3; g.setLineDash([4, 6]);
     g.beginPath(); g.moveTo(aim.sx, aim.sy); g.lineTo(aim.x, aim.y); g.stroke(); g.setLineDash([]);
     g.fillStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.arc(aim.sx, aim.sy, 6, 0, Math.PI * 2); g.fill();
     if (!v) return;
-    // 最初に当たるところまでの軌道
-    const { pts, hit } = guidePath(v.vx, v.vy);
-    for (let i = 1; i < pts.length; i++) {
-      if (i % 2) continue;
-      const a = 0.95 - i / pts.length * 0.5;
-      g.fillStyle = `rgba(255,255,255,${a})`;
-      g.beginPath(); g.arc(pts[i][0], pts[i][1], 3.2, 0, Math.PI * 2); g.fill();
+    // 最初に何かへ当たるところまでの軌道
+    const { pts, hit } = S.guide(stage, v.vx, v.vy, stageT);
+    for (let i = 2; i < pts.length; i += 2) {
+      g.fillStyle = `rgba(255,255,255,${0.95 - i / pts.length * 0.45})`;
+      g.beginPath(); g.arc(pts[i][0], pts[i][1], 3, 0, Math.PI * 2); g.fill();
     }
-    if (hit) {
-      const [hx, hy] = pts[pts.length - 1];
-      g.strokeStyle = '#ffe082'; g.lineWidth = 2.5; g.beginPath(); g.arc(hx, hy, 9, 0, Math.PI * 2); g.stroke();
-    }
-    // 強さのめやす
-    const p = v.power;
-    rrect(g, shooter.x - 30, FLOOR + 16, 60, 8, 4); g.fillStyle = 'rgba(0,0,0,.4)'; g.fill();
-    rrect(g, shooter.x - 30, FLOOR + 16, 60 * p, 8, 4); g.fillStyle = p > 0.95 ? '#ff7043' : '#ffd54f'; g.fill();
+    if (hit) { const [hx, hy] = pts[pts.length - 1]; g.strokeStyle = '#ffe082'; g.lineWidth = 2.5; g.beginPath(); g.arc(hx, hy, 9, 0, Math.PI * 2); g.stroke(); }
+    rrect(g, stage.shooter - 28, FLOOR + 12, 56, 7, 3.5); g.fillStyle = 'rgba(0,0,0,.4)'; g.fill();
+    rrect(g, stage.shooter - 28, FLOOR + 12, 56 * v.power, 7, 3.5); g.fillStyle = v.power > 0.95 ? '#ff7043' : '#ffd54f'; g.fill();
   }
 
   function drawHud(g) {
-    const lv = rankOf(score);
-    rrect(g, 10, 10, 130, 54, 14); g.fillStyle = 'rgba(0,0,0,.35)'; g.fill();
-    text(g, String(score), 75, 32, 28, '#fff');
-    text(g, RANKS[lv].name, 75, 55, 12, '#ffe082');
-    // 残りの回数（ボール）
-    for (let i = 0; i < 3; i++) drawBall(g, W - 120 + i * 30, 30, 0, i < lives ? 1 : 0.2);
-    text(g, `ベスト ${best}`, W - 90, 56, 11, '#ddd');
-    if (streak >= 2) text(g, `${streak}連続`, 75, 80, 14, '#ffd54f');
-    const btn = { x: W - 34, y: 10, w: 26, h: 26 };
-    text(g, muted ? '🔇' : '🔊', btn.x + 13, btn.y + 13 + 50, 14);
-    buttons.push({ x: W - 40, y: 52, w: 34, h: 30, fn: () => { muted = !muted; try { localStorage.setItem('sumo-shoot-mute', muted ? '1' : '0'); } catch {} } });
+    rrect(g, 8, 8, 150, 46, 12); g.fillStyle = 'rgba(0,0,0,.4)'; g.fill();
+    if (mode === 'stage') {
+      text(g, `${Math.floor(stageNo / 10) + 1}-${stageNo % 10 + 1}`, 20, 24, 18, '#fff', null, 'left');
+      text(g, CHAPTERS[stage.chapter], 20, 43, 11, '#ffe082', null, 'left');
+    } else {
+      text(g, String(score), 50, 31, 26, '#fff', null);
+      text(g, RANKS[rankOf(score)].name, 115, 24, 11, '#ffe082', null);
+      text(g, `ベスト${best}`, 115, 42, 10, '#ddd', null);
+    }
+    for (let i = 0; i < 3; i++) drawBall(g, 176 + i * 26, 31, 0, i < balls ? 1 : 0.2, 10);
+    if (mode === 'endless' && streak >= 2) text(g, `${streak}連続`, 270, 31, 14, '#ffd54f');
+    button(g, W - 104, 8, 44, 40, () => { scene = mode === 'stage' ? 'select' : 'title'; aim = null; }, (cx, cy) => {
+      g.fillStyle = '#3a2a10'; for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { rrect(g, cx + i * 8 - 3, cy + j * 8 - 3, 6, 6, 1.5); g.fill(); }
+    });
+    button(g, W - 54, 8, 44, 40, () => { mode === 'stage' ? playStage(stageNo) : playEndless(); }, (cx, cy) => {
+      g.strokeStyle = '#3a2a10'; g.lineWidth = 3; g.lineCap = 'round';
+      g.beginPath(); g.arc(cx, cy, 10, -Math.PI * 0.2, Math.PI * 1.45); g.stroke();
+      g.fillStyle = '#3a2a10'; g.beginPath(); g.moveTo(cx + 11, cy - 12); g.lineTo(cx + 12, cy - 2); g.lineTo(cx + 3, cy - 5); g.closePath(); g.fill();
+    });
   }
 
-  function draw() {
-    const g = ctx;
-    buttons = [];
+  function drawGame(g) {
     g.save();
     if (shake > 0) g.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
     g.drawImage(background(), 0, 0, W, H);
-    if (state === 'title') { g.restore(); return drawTitle(g); }
+    drawWalls(g);
     drawHoop(g, false);
     drawShooter(g);
-    // ボールの残像
     if (ball) {
       if (ball.flying) ball.trail.forEach(([x, y], i) => { g.fillStyle = `rgba(255,170,80,${i / ball.trail.length * 0.25})`; g.beginPath(); g.arc(x, y, BALL_R * (0.4 + i / ball.trail.length * 0.5), 0, Math.PI * 2); g.fill(); });
-      // 輪より奥にいる間（入る前）は、手前の輪とネットの下に描く
       drawBall(g, ball.x, ball.y, ball.ang);
     }
     drawHoop(g, true);
     drawGuide(g);
     for (const p of parts) {
       g.save(); g.globalAlpha = 1 - p.t / p.life;
-      if (p.zab) { g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; rrect(g, -9, -7, 18, 14, 4); g.fill(); }
+      if (p.zab) { g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; rrect(g, -8, -6, 16, 12, 3); g.fill(); }
       else { g.fillStyle = p.c; g.beginPath(); g.arc(p.x, p.y, 3, 0, Math.PI * 2); g.fill(); }
       g.restore();
     }
     for (const p of pops) {
       const a = Math.min(1, (1.2 - p.t) * 3), s = 1 + Math.max(0, 0.15 - p.t) * 3;
-      g.save(); g.globalAlpha = a; g.translate(p.x - (p.miss ? 0 : 40), p.y - p.t * 40); g.scale(s, s);
-      text(g, p.text, 0, 0, p.miss ? 22 : 30, p.miss ? '#90caf9' : '#ffe082', 'rgba(0,0,0,.6)');
-      if (p.sub) text(g, p.sub, 0, 26, 14, '#fff');
+      g.save(); g.globalAlpha = a; g.translate(p.x, p.y - p.t * 40); g.scale(s, s);
+      text(g, p.text, 0, 0, p.miss ? 20 : 26, p.miss ? '#90caf9' : '#ffe082');
+      if (p.sub) text(g, p.sub, 0, 24, 13, '#fff');
       g.restore();
     }
     g.restore();
     drawHud(g);
     if (rankFlash) {
       const k = Math.min(1, rankFlash.t * 5), a = Math.min(1, (1.8 - rankFlash.t) * 3);
-      g.save(); g.globalAlpha = a; g.translate(W / 2, 190); g.scale(0.6 + k * 0.4, 0.6 + k * 0.4);
-      text(g, rankFlash.text, 0, 0, 32, '#ffe082', '#7a2a00'); g.restore();
+      g.save(); g.globalAlpha = a; g.translate(W / 2, 110); g.scale(0.6 + k * 0.4, 0.6 + k * 0.4);
+      text(g, rankFlash.text, 0, 0, 30, '#ffe082', '#7a2a00'); g.restore();
     }
     if (flash > 0) { g.fillStyle = `rgba(255,255,255,${flash})`; g.fillRect(0, 0, W, H); }
-    if (state === 'play' && shots === 0 && !aim) {
-      const k = (t % 1.6) / 1.6, h = ballHome();
-      text(g, '引っぱって、はなしてシュート！', W / 2, 150, 19, '#fff');
-      g.save(); g.globalAlpha = 1 - k * 0.5; text(g, '👆', h.x + 10 - k * 50, h.y + 30 + k * 50, 30); g.restore();
+    if (scene === 'play' && shotNo === 0 && !aim && (mode === 'endless' || stageNo === 0)) {
+      const k = (t % 1.6) / 1.6, h = S.ballHome(stage);
+      text(g, '引っぱって、はなしてシュート！', W / 2, 90, 20, '#fff');
+      g.save(); g.globalAlpha = 1 - k * 0.5; text(g, '👆', h.x + 70 - k * 50, h.y + 10 + k * 50, 28, '#fff', null); g.restore();
     }
-    if (state === 'over') drawOver(g);
+  }
+
+  function panel(g, a) {
+    g.fillStyle = `rgba(15,8,25,${0.6 * a})`; g.fillRect(0, 0, W, H);
+    rrect(g, W / 2 - 170, 70, 340, 290, 20); g.fillStyle = 'rgba(255,248,220,.97)'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#3a2a10'; g.stroke();
+  }
+  function drawClear(g) {
+    const a = Math.min(1, endT * 4); g.save(); g.globalAlpha = a; panel(g, a);
+    text(g, 'ゴール！', W / 2, 108, 30, '#c62828', null);
+    for (let i = 0; i < 3; i++) { const on = i < starsGot && endT >= 0.5 + i * 0.25; star(g, W / 2 + (i - 1) * 64, 168 - (i === 1 ? 10 : 0), 26, on); }
+    text(g, ['3球目で決めた', '2球目で決めた', '1球目で決めた！'][starsGot - 1] || '', W / 2, 222, 14, '#6b5530', null);
+    g.restore();
+    if (endT > 0.6) {
+      const hasNext = stageNo + 1 < STAGES.length;
+      button(g, W / 2 - 140, 248, 280, 48, () => hasNext ? playStage(stageNo + 1) : (scene = 'select'), hasNext ? '次のステージ ▶' : 'ステージ選択へ', '#9dffb0', 20);
+      button(g, W / 2 - 140, 304, 134, 42, () => playStage(stageNo), 'もう一回', '#fff', 16);
+      button(g, W / 2 + 6, 304, 134, 42, () => { scene = 'select'; page = Math.floor(stageNo / 10); }, 'ステージ', '#fff', 16);
+    }
+  }
+  function drawFail(g) {
+    const a = Math.min(1, endT * 4); g.save(); g.globalAlpha = a; panel(g, a);
+    text(g, '3球とも外れ…', W / 2, 120, 28, '#3b5bb5', null);
+    drawSumo(g, sprite(RANKS[0].body, RANKS[0].belt), 'hit', W / 2, 200, 34);
+    g.restore();
+    if (endT > 0.5) {
+      button(g, W / 2 - 140, 256, 280, 48, () => playStage(stageNo), 'もう一回', '#ffe08a', 20);
+      button(g, W / 2 - 140, 310, 280, 40, () => { scene = 'select'; page = Math.floor(stageNo / 10); }, 'ステージ選択へ', '#fff', 16);
+    }
+  }
+  function drawOver(g) {
+    const a = Math.min(1, endT * 3); g.save(); g.globalAlpha = a; panel(g, a);
+    text(g, 'しあい終了！', W / 2, 110, 30, '#7a2a00', null);
+    text(g, `${score} 点`, W / 2, 162, 38, '#c62828', null);
+    text(g, `番付　${RANKS[rankOf(score)].name}`, W / 2, 205, 17, '#3a2a10', null);
+    text(g, score >= best && score > 0 ? 'ベスト更新！' : `ベスト ${best}`, W / 2, 232, 15, '#b26a00', null);
+    g.restore();
+    if (endT > 0.8) {
+      button(g, W / 2 - 140, 256, 280, 48, playEndless, 'もう一度', '#9dffb0', 20);
+      button(g, W / 2 - 140, 310, 280, 40, () => { scene = 'title'; }, 'タイトルへ', '#fff', 16);
+    }
+  }
+
+  function drawSelect(g) {
+    g.drawImage(background(), 0, 0, W, H);
+    g.fillStyle = 'rgba(15,8,25,.55)'; g.fillRect(0, 0, W, H);
+    text(g, `第${page + 1}章　${CHAPTERS[page]}`, W / 2, 34, 22, '#ffe082');
+    text(g, `★ ${totalStars()} / ${STAGES.length * 3}`, W / 2, 60, 14, '#fff');
+    for (let k = 0; k < 10; k++) {
+      const i = page * 10 + k, col = k % 5, row = Math.floor(k / 5), x = 110 + col * 100, y = 86 + row * 112;
+      const open = unlocked(i), st = progress[i] || 0;
+      button(g, x, y, 82, 96, () => { if (open) playStage(i); }, (cx, cy) => {
+        if (!open) { text(g, '🔒', cx, cy, 22, '#fff', null); return; }
+        text(g, `${page + 1}-${k + 1}`, cx, cy - 16, 20, '#3a2a10', null);
+        for (let s = 0; s < 3; s++) star(g, cx + (s - 1) * 22, cy + 22, 9, s < st);
+      }, open ? (st ? '#fff8dc' : '#fff1b8') : '#8c8273');
+    }
+    if (page > 0) button(g, 16, 170, 60, 60, () => { page--; }, '◀', '#fff', 22);
+    if (page < CHAPTERS.length - 1) button(g, W - 76, 170, 60, 60, () => { page++; }, '▶', '#fff', 22);
+    button(g, W - 60, 10, 46, 40, () => { scene = 'title'; }, '✕', '#fff', 18);
+    text(g, `${page + 1} / ${CHAPTERS.length}`, W / 2, 330, 13, '#ddd');
   }
 
   function drawTitle(g) {
-    g.fillStyle = 'rgba(20,10,30,.35)'; g.fillRect(0, 0, W, H);
-    text(g, 'はなりきし', W / 2, 190, 30, '#ffe082', '#3b1a00');
-    text(g, 'シュート', W / 2, 245, 56, '#fff', '#7a2a00');
-    const bob = Math.abs(Math.sin(t * 3)) * 20;
-    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(W / 2, FLOOR + 4, 34, 7, 0, 0, Math.PI * 2); g.fill();
-    drawSumo(g, sprite(RANKS[0].body, RANKS[0].belt), 'normal', W / 2, FLOOR - 36 - bob * 0.2, 34);
-    drawBall(g, W / 2 + 10, FLOOR - 100 - bob * 2.2, t * 4);
-    text(g, 'タップではじめる', W / 2, 420, 22, '#9dffb0');
-    text(g, '3回はずしたら終わり', W / 2, 455, 14, '#eee');
-    text(g, `ベスト ${best}`, W / 2, 485, 16, '#ffe082');
+    g.drawImage(background(), 0, 0, W, H);
+    g.fillStyle = 'rgba(20,10,30,.3)'; g.fillRect(0, 0, W, H);
+    text(g, 'はなりきし', 230, 110, 28, '#ffe082', '#3b1a00');
+    text(g, 'シュート', 230, 160, 54, '#fff', '#7a2a00');
+    const bob = Math.abs(Math.sin(t * 3));
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(560, FLOOR + 4, 32, 7, 0, 0, Math.PI * 2); g.fill();
+    drawSumo(g, sprite(RANKS[0].body, RANKS[0].belt), 'normal', 560, FLOOR - 34 - bob * 4, 32);
+    drawBall(g, 572, FLOOR - 96 - bob * 44, t * 4);
+    button(g, 110, 210, 240, 56, () => { const first = STAGES.findIndex((s, i) => unlocked(i) && !progress[i]); page = Math.floor(Math.max(0, first) / 10); scene = 'select'; }, (cx, cy) => {
+      text(g, 'ステージ', cx, cy - 8, 22, '#3a2a10', null); text(g, `★ ${totalStars()} / ${STAGES.length * 3}`, cx, cy + 15, 12, '#8a6420', null);
+    }, '#9dffb0');
+    button(g, 110, 278, 240, 50, playEndless, (cx, cy) => {
+      text(g, 'エンドレス', cx, cy - 7, 20, '#3a2a10', null); text(g, `3回外したら終わり　ベスト ${best}`, cx, cy + 13, 11, '#8a6420', null);
+    }, '#ffe08a');
+    button(g, W - 60, 10, 46, 40, () => { muted = !muted; try { localStorage.setItem('sumo-shoot-mute', muted ? '1' : '0'); } catch {} }, muted ? '🔇' : '🔊', '#fff', 18);
   }
 
-  function drawOver(g) {
-    const a = Math.min(1, overT * 3);
-    g.save(); g.globalAlpha = a;
-    g.fillStyle = 'rgba(15,8,25,.6)'; g.fillRect(0, 0, W, H);
-    g.drawImage(IMG.home, W / 2 - 60, 140, 120, 120);
-    text(g, 'しあい終了！', W / 2, 290, 34, '#fff', '#7a2a00');
-    text(g, `${score} 点`, W / 2, 345, 40, '#ffe082');
-    text(g, `番付　${RANKS[rankOf(score)].name}`, W / 2, 392, 18, '#fff');
-    text(g, score >= best && score > 0 ? 'ベスト更新！' : `ベスト ${best}`, W / 2, 424, 16, '#ffd54f');
-    if (overT > 0.8) text(g, 'タップで もういちど', W / 2, 490, 22, '#9dffb0');
-    g.restore();
+  function draw() {
+    const g = ctx;
+    buttons = [];
+    if (scene === 'title') return drawTitle(g);
+    if (scene === 'select') return drawSelect(g);
+    drawGame(g);
+    if (scene === 'play') return;
+    buttons = [];                       // 結果の画面では、ゲームのボタンは押せない
+    if (scene === 'clear') drawClear(g);
+    else if (scene === 'fail') drawFail(g);
+    else if (scene === 'over') drawOver(g);
   }
 
   let last = 0;
@@ -557,7 +624,7 @@
     const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
     update(dt); draw(); requestAnimationFrame(frame);
   }
-  if (location.hash === '#debug') window.DBG = { simulate, place: n => { placeHoop(n); placeShooter(n); }, shoot: (vx, vy) => shoot(vx, vy), get s() { return { state, score, lives, hoop, shooter, ball, shotInfo }; }, reset, guidePath, ballHome: () => ballHome() };   // テスト用
+  if (location.hash === '#debug') window.DBG = { playStage, playEndless, shoot: v => shoot(v), get s() { return { scene, stage, stageT, ball, shot, balls, score }; } };   // テスト用
   loadImages().then(() => { requestAnimationFrame(frame); })
     .catch(err => { document.body.textContent = err.message; });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

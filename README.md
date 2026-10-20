@@ -23,7 +23,7 @@
 ├─ survivors/            はなりきしサバイバーズ
 ├─ shogi/                はなりきし将棋
 ├─ tachiai/              はなりきし 立ち合い（ステージは levels.js）
-├─ shoot/                はなりきしシュート
+├─ shoot/                はなりきしシュート（横画面。ステージは _docs/tools/gen_shoot_stages.js で作る）
 └─ _chanko/              はなりきし ちゃんこダンジョン（非公開。公開するときは chanko/ に戻し、
                           thumb.jpg を thumbs/chanko.jpg へ移して games.json に足す）
 ```
@@ -60,6 +60,7 @@
 ## ゲームを作るときの約束
 
 - 画面は縦長 `420x700`（実際の描画は2倍の `840x1400`）で作り、`touch-action: none` にします。
+  - 例外: はなりきしシュート（`shoot/`）は横画面 `700x420`。スマホを縦に持つと「横にしてね」と出ます。
 - 番付（前相撲 → 横綱）は全ゲーム共通の名前と色を使います（`_template/index.html` の `RANKS`）。
 - ベスト記録の `localStorage` キーは `sumo-<ゲームid>-best` にします。サイト全体で共有されるので、他のゲームと重ならないようにします。
 - ゲームを更新したら `sw.js` の `VERSION` を上げます。`sw.js` は「ネット優先」なので、オンラインなら基本的に常に最新が出ます。
