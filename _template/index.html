@@ -22,14 +22,25 @@
     display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
     box-shadow: 0 0 30px rgba(60, 40, 0, .3); touch-action: none; cursor: pointer;
   }
+  /* ゲーム一覧へ戻るボタン（遊んでいないときだけ、画面の左下に出す） */
+  #toList {
+    position: fixed; z-index: 5; text-decoration: none;
+    left: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px);
+    bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 10px);
+    padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10;
+    background: rgba(255, 248, 220, .94); color: #3a2a10; font-weight: bold; font-size: 14px;
+  }
+  #toList[hidden] { display: none; }
 </style>
 </head>
 <body>
 <canvas id="game" width="840" height="1400"></canvas>
+<a id="toList" href="../">◀ ゲーム一覧</a>
 
 <script>
 (() => {
   'use strict';
+  const toList = document.getElementById('toList');
   const W = 420, H = 700;
   const BEST_KEY = 'sumo-template-best';   // TODO: sumo-<ゲームid>-best
 
@@ -128,6 +139,7 @@
 
   let last = 0;
   function frame(now) {
+    toList.hidden = !(state !== 'play');
     const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
     update(dt); draw(); requestAnimationFrame(frame);
   }
