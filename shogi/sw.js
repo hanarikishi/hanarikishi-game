@@ -1,5 +1,5 @@
 // オフラインでも遊べるようにキャッシュする。更新したら VERSION を上げる。
-const VERSION = 'shogi-v7';
+const VERSION = 'shogi-v8';
 const FILES = [
   './', './index.html', './manifest.webmanifest',
   '../parts/body_color.png', '../parts/mawashi.png', '../parts/body_line.png',

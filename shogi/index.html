@@ -354,7 +354,6 @@
     if (m.f < 0) {
       hands[hi(side)][m.c]--;
       pcs.push(mkPiece(side, m.c, m.t, 1 << m.c));
-      if (side === -1) txt = `CPUが${NAME[m.c]}を打った`;
     } else {
       const p = pieceAt(m.f), q = pieceAt(m.t);
       const wasPro = p.c >= PRO;
@@ -561,17 +560,19 @@
   }
 
   function drawHands(g) {
-    for (const side of [1, -1]) {
+    for (const side of [1]) {      // 相手の持ち駒は見せない
       const y = HAND_Y[side];
-      text(g, side === 1 ? 'あなたの持ち駒' : 'CPUの持ち駒', 14, y - 22, 11, SIDE_COLOR[side], 'rgba(0,0,0,0)', 'left');
+      text(g, 'あなたの持ち駒', 14, y - 22, 11, SIDE_COLOR[side], 'rgba(0,0,0,0)', 'left');
       const chips = handChips(side);
       if (!chips.length) text(g, 'なし', BX, y, 13, '#a08a60', 'rgba(0,0,0,0)');
       for (const ch of chips) {
         rrect(g, ch.x - 23, ch.y - 21, 46, 42, 9);
         g.fillStyle = sel && sel.drop === ch.c && side === 1 ? '#ffe08a' : '#fff8dc'; g.fill();
         g.lineWidth = 2.5; g.strokeStyle = SIDE_COLOR[side]; g.stroke();
-        text(g, NAME[ch.c], ch.x - 3, ch.y + 1, 20, '#3a2a10', 'rgba(0,0,0,0)');
-        if (ch.n > 1) text(g, String(ch.n), ch.x + 15, ch.y + 12, 12, SIDE_COLOR[side], '#fff8dc');
+        drawSumo(g, pieceFaces(1, ch.c), 'normal', ch.x - 1, ch.y - 1, 14);
+        g.save(); g.translate(ch.x - 1, ch.y - 1); g.scale(0.62, 0.62); drawDots(g, ch.c, 0, 0); g.restore();
+        nameChip(g, NAME[ch.c], ch.x + 13, ch.y + 10, 1);
+        if (ch.n > 1) text(g, '×' + ch.n, ch.x - 14, ch.y + 13, 12, SIDE_COLOR[side], '#fff8dc');
       }
     }
   }
