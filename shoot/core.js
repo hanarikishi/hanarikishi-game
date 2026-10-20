@@ -1,5 +1,5 @@
 // はなりきしシュートの物理（ゲーム本体と、ステージを作る道具の両方から使う）
-// ステージ: { shooter: x, hoop: { x, y, board: 'R' | 'L' | null, dx, dy, period, rim（輪の半幅。省くと27） }, walls: [[x1, y1, x2, y2, 種類]], pegs: [[x, y, r]] }
+// ステージ: { shooter: x, ceil（天井の高さ。省くと天井なし）, hoop: { x, y, board: 'R' | 'L' | null, dx, dy, period, rim（輪の半幅。省くと27） }, walls: [[x1, y1, x2, y2, 種類]], pegs: [[x, y, r]] }
 //   walls の種類: 'w' 板（ふつうに跳ね返る）  'z' 座布団（よく跳ねる）
 (function (root) {
   'use strict';
@@ -36,6 +36,7 @@
     const dt = C.DT;
     b.vy += C.G * dt; b.x += b.vx * dt; b.y += b.vy * dt;
     if (b.y > C.FLOOR - C.BALL_R) { const v = b.vy; b.y = C.FLOOR - C.BALL_R; b.vy = -b.vy * 0.6; b.vx *= 0.85; if (onHit && v > 0) onHit('floor', v); }
+    if (st.ceil !== undefined && b.y < st.ceil + C.BALL_R && b.vy < 0) { const v = -b.vy; b.y = st.ceil + C.BALL_R; b.vy = v * 0.45; b.vx *= 0.9; if (onHit) onHit('wall', v); }
     if (b.x > C.W - C.BALL_R) { const v = b.vx; b.x = C.W - C.BALL_R; b.vx = -b.vx * 0.5; if (onHit) onHit('wall', Math.abs(v)); }
     for (const s of st.walls || []) hitSeg(b, s, onHit);
     for (const [px, py, r] of st.pegs || []) hitPoint(b, px, py, r, 0.6, 'peg', onHit);
