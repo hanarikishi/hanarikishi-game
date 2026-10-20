@@ -20,14 +20,12 @@
   }
   /* 横画面のゲーム（700x420） */
   canvas {
-    display: block; width: min(100vw, calc(100dvh * 700 / 420)); aspect-ratio: 700 / 420;
-    box-shadow: 0 0 30px rgba(0, 0, 0, .5); touch-action: none; cursor: pointer;
+    display: block; width: 100vw; height: 100dvh; touch-action: none; cursor: pointer;
   }
   /* ゲーム一覧へ戻るボタン（遊んでいないときだけ、画面の左下に出す） */
   #toList {
     position: fixed; z-index: 5; text-decoration: none;
-    left: calc(50vw - min(100vw, 100dvh * 700 / 420) / 2 + 10px);
-    bottom: calc(50dvh - min(100dvh, 100vw * 420 / 700) / 2 + 10px);
+    left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: 10px;
     padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10;
     background: rgba(255, 248, 220, .94); color: #3a2a10; font-weight: bold; font-size: 14px;
   }
@@ -149,7 +147,17 @@
   // ================= 状態 =================
   const cv = document.getElementById('game');
   const ctx = cv.getContext('2d');
-  ctx.scale(cv.width / W, cv.height / H);
+  // 画面いっぱいに広げる。ゲームの中心の700x420はそのまま、左右（や上下）に背景と地面を足す
+  let ox = 0, oy = 0, sc = 1, VW = W, VH = H;
+  function resize() {
+    const vw = window.innerWidth, vh = window.innerHeight, dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    sc = Math.min(vw / W, vh / H); VW = vw / sc; VH = vh / sc; ox = (VW - W) / 2; oy = (VH - H) / 2;
+    cv.width = Math.round(vw * dpr); cv.height = Math.round(vh * dpr);
+    ctx.setTransform(sc * dpr, 0, 0, sc * dpr, ox * sc * dpr, oy * sc * dpr);
+    C.W = W + ox;                 // ボールが跳ね返る右の壁は、画面の右はし
+    bgCanvas = null;
+  }
+  window.addEventListener('resize', resize);
   // scene: title / select / play / clear / fail / over
   let scene = 'title', mode = 'stage', t = 0, page = 0;
   let stage, stageNo, stageT, balls, shotNo, ball, aim, shot, pops, parts, shake, flash, endT, jumpT, score, streak, starsGot, starShown;
@@ -268,7 +276,7 @@
 
   // ================= 入力 =================
   let buttons = [];
-  function pos(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; }
+  function pos(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / sc - ox, (e.clientY - r.top) / sc - oy]; }
   cv.addEventListener('pointerdown', e => {
     e.preventDefault(); audio();
     const [x, y] = pos(e);
@@ -320,11 +328,13 @@
     g.fillStyle = color; g.fillText(s, x, y);
   }
   function rrect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+  let btnDx = 0;
+  const shifted = (g, dx, fn) => { g.save(); g.translate(dx, 0); btnDx = dx; fn(); btnDx = 0; g.restore(); };
   function button(g, x, y, w, h, fn, label, color = '#fff8dc', size = 18) {
     rrect(g, x, y + 3, w, h, Math.min(14, h / 2)); g.fillStyle = 'rgba(0,0,0,.35)'; g.fill();
     rrect(g, x, y, w, h, Math.min(14, h / 2)); g.fillStyle = color; g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#3a2a10'; g.stroke();
     if (typeof label === 'function') label(x + w / 2, y + h / 2); else text(g, label, x + w / 2, y + h / 2, size, '#3a2a10', null);
-    buttons.push({ x, y, w, h, fn });
+    buttons.push({ x: x + btnDx, y, w, h, fn });
   }
   function star(g, x, y, r, filled) {
     g.beginPath();
@@ -337,33 +347,37 @@
   let bgCanvas = null;
   function background() {
     if (bgCanvas) return bgCanvas;
-    bgCanvas = document.createElement('canvas'); bgCanvas.width = W * 2; bgCanvas.height = H * 2;
-    const g = bgCanvas.getContext('2d'); g.scale(2, 2);
-    const sky = g.createLinearGradient(0, 0, 0, FLOOR);
+    const k = Math.min(2, 3000 / Math.max(VW, VH));
+    bgCanvas = document.createElement('canvas'); bgCanvas.width = Math.round(VW * k); bgCanvas.height = Math.round(VH * k);
+    const g = bgCanvas.getContext('2d'); g.scale(k, k); g.translate(ox, oy);
+    const X0 = -ox, X1 = W + ox, Y0 = -oy, Y1 = H + oy;
+    const sky = g.createLinearGradient(0, Y0, 0, FLOOR);
     sky.addColorStop(0, '#6f8aa6'); sky.addColorStop(1, '#bccbd8');
-    g.fillStyle = sky; g.fillRect(0, 0, W, FLOOR);
+    g.fillStyle = sky; g.fillRect(X0, Y0, X1 - X0, FLOOR - Y0);
     const hill = (c, base, amp, f, ph) => {
-      g.fillStyle = c; g.beginPath(); g.moveTo(0, FLOOR);
-      for (let x = 0; x <= W; x += 10) g.lineTo(x, base + Math.sin(x * f + ph) * amp + Math.sin(x * f * 2.3 + ph) * amp * 0.4);
-      g.lineTo(W, FLOOR); g.closePath(); g.fill();
+      g.fillStyle = c; g.beginPath(); g.moveTo(X0, FLOOR);
+      for (let x = X0; x <= X1 + 10; x += 10) g.lineTo(x, base + Math.sin(x * f + ph) * amp + Math.sin(x * f * 2.3 + ph) * amp * 0.4);
+      g.lineTo(X1, FLOOR); g.closePath(); g.fill();
     };
     hill('#9fb3c5', 285, 22, 0.008, 1); hill('#8ea5ba', 320, 16, 0.011, 4);
-    const fg = g.createLinearGradient(0, FLOOR, 0, H);
+    const fg = g.createLinearGradient(0, FLOOR, 0, Y1);
     fg.addColorStop(0, '#c7a56f'); fg.addColorStop(1, '#a5844f');
-    g.fillStyle = fg; g.fillRect(0, FLOOR, W, H - FLOOR);
-    g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(0, FLOOR, W, 2);
-    g.fillStyle = 'rgba(255,255,255,.5)'; g.fillRect(0, FLOOR + 18, W, 2);
+    g.fillStyle = fg; g.fillRect(X0, FLOOR, X1 - X0, Y1 - FLOOR);
+    g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(X0, FLOOR, X1 - X0, 2);
+    g.fillStyle = 'rgba(255,255,255,.5)'; g.fillRect(X0, FLOOR + 18, X1 - X0, 2);
     return bgCanvas;
   }
+  const drawBg = g => g.drawImage(background(), -ox, -oy, VW, VH);
+  const fullRect = g => g.fillRect(-ox, -oy, VW, VH);
 
   // 天井（これより上には飛ばせない）
   function drawCeiling(g) {
     if (stage.ceil === undefined) return;
     const c = stage.ceil, grd = g.createLinearGradient(0, 0, 0, c);
     grd.addColorStop(0, 'rgba(18,26,48,.95)'); grd.addColorStop(1, 'rgba(40,56,92,.9)');
-    g.fillStyle = grd; g.fillRect(0, 0, W, c);
-    g.fillStyle = '#ffc107'; g.fillRect(0, c - 3, W, 3);
-    g.fillStyle = 'rgba(18,26,48,.9)'; for (let x = -10; x < W; x += 28) { g.beginPath(); g.moveTo(x, c - 3); g.lineTo(x + 14, c - 3); g.lineTo(x + 6, c); g.lineTo(x - 8, c); g.closePath(); g.fill(); }
+    g.fillStyle = grd; g.fillRect(-ox, -oy, VW, c + oy);
+    g.fillStyle = '#ffc107'; g.fillRect(-ox, c - 3, VW, 3);
+    g.fillStyle = 'rgba(18,26,48,.9)'; for (let x = -ox - 10; x < W + ox; x += 28) { g.beginPath(); g.moveTo(x, c - 3); g.lineTo(x + 14, c - 3); g.lineTo(x + 6, c); g.lineTo(x - 8, c); g.closePath(); g.fill(); }
   }
 
   function drawWalls(g) {
@@ -468,6 +482,7 @@
   }
 
   function drawHud(g) {
+    g.save(); g.translate(-ox, 0);          // 左の表示は画面の左はしへ
     rrect(g, 8, 8, 150, 46, 12); g.fillStyle = 'rgba(0,0,0,.4)'; g.fill();
     if (mode === 'stage') {
       text(g, `${Math.floor(stageNo / 10) + 1}-${stageNo % 10 + 1}`, 20, 24, 18, '#fff', null, 'left');
@@ -479,6 +494,8 @@
     }
     for (let i = 0; i < 3; i++) drawBall(g, 176 + i * 26, 31, 0, i < balls ? 1 : 0.2, 10);
     if (mode === 'endless' && streak >= 2) text(g, `${streak}連続`, 270, 31, 14, '#ffd54f');
+    g.restore();
+    shifted(g, ox, () => {
     button(g, W - 104, 8, 44, 40, () => { scene = mode === 'stage' ? 'select' : 'title'; aim = null; }, (cx, cy) => {
       g.fillStyle = '#3a2a10'; for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { rrect(g, cx + i * 8 - 3, cy + j * 8 - 3, 6, 6, 1.5); g.fill(); }
     });
@@ -487,12 +504,13 @@
       g.beginPath(); g.arc(cx, cy, 10, -Math.PI * 0.2, Math.PI * 1.45); g.stroke();
       g.fillStyle = '#3a2a10'; g.beginPath(); g.moveTo(cx + 11, cy - 12); g.lineTo(cx + 12, cy - 2); g.lineTo(cx + 3, cy - 5); g.closePath(); g.fill();
     });
+    });
   }
 
   function drawGame(g) {
     g.save();
     if (shake > 0) g.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
-    g.drawImage(background(), 0, 0, W, H);
+    drawBg(g);
     drawCeiling(g);
     drawWalls(g);
     drawHoop(g, false);
@@ -518,7 +536,7 @@
     }
     g.restore();
     drawHud(g);
-    if (flash > 0) { g.fillStyle = `rgba(255,255,255,${flash})`; g.fillRect(0, 0, W, H); }
+    if (flash > 0) { g.fillStyle = `rgba(255,255,255,${flash})`; fullRect(g); }
     if (scene === 'play' && shotNo === 0 && !aim && (mode === 'endless' || stageNo === 0)) {
       const k = (t % 1.6) / 1.6, h = S.ballHome(stage);
       text(g, '引っぱって、はなしてシュート！', W / 2, 90, 20, '#fff');
@@ -527,7 +545,7 @@
   }
 
   function panel(g, a) {
-    g.fillStyle = `rgba(15,8,25,${0.6 * a})`; g.fillRect(0, 0, W, H);
+    g.fillStyle = `rgba(15,8,25,${0.6 * a})`; fullRect(g);
     rrect(g, W / 2 - 170, 70, 340, 290, 20); g.fillStyle = 'rgba(255,248,220,.97)'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#3a2a10'; g.stroke();
   }
   function drawClear(g) {
@@ -566,8 +584,8 @@
   }
 
   function drawSelect(g) {
-    g.drawImage(background(), 0, 0, W, H);
-    g.fillStyle = 'rgba(15,8,25,.55)'; g.fillRect(0, 0, W, H);
+    drawBg(g);
+    g.fillStyle = 'rgba(15,8,25,.55)'; fullRect(g);
     text(g, `第${page + 1}章　${CHAPTERS[page]}`, W / 2, 34, 22, '#ffe082');
     text(g, `★ ${totalStars()} / ${STAGES.length * 3}`, W / 2, 60, 14, '#fff');
     for (let k = 0; k < 10; k++) {
@@ -579,15 +597,15 @@
         for (let s = 0; s < 3; s++) star(g, cx + (s - 1) * 22, cy + 22, 9, s < st);
       }, open ? (st ? '#fff8dc' : '#fff1b8') : '#8c8273');
     }
-    if (page > 0) button(g, 16, 170, 60, 60, () => { page--; }, '◀', '#fff', 22);
-    if (page < CHAPTERS.length - 1) button(g, W - 76, 170, 60, 60, () => { page++; }, '▶', '#fff', 22);
-    button(g, W - 60, 10, 46, 40, () => { scene = 'title'; }, '✕', '#fff', 18);
+    if (page > 0) shifted(g, -ox, () => button(g, 16, 170, 60, 60, () => { page--; }, '◀', '#fff', 22));
+    if (page < CHAPTERS.length - 1) shifted(g, ox, () => button(g, W - 76, 170, 60, 60, () => { page++; }, '▶', '#fff', 22));
+    shifted(g, ox, () => button(g, W - 60, 10, 46, 40, () => { scene = 'title'; }, '✕', '#fff', 18));
     text(g, `${page + 1} / ${CHAPTERS.length}`, W / 2, 330, 13, '#ddd');
   }
 
   function drawTitle(g) {
-    g.drawImage(background(), 0, 0, W, H);
-    g.fillStyle = 'rgba(20,10,30,.3)'; g.fillRect(0, 0, W, H);
+    drawBg(g);
+    g.fillStyle = 'rgba(20,10,30,.3)'; fullRect(g);
     text(g, 'はなりきし', 230, 110, 28, '#ffe082', '#3b1a00');
     text(g, 'シュート', 230, 160, 54, '#fff', '#7a2a00');
     const bob = Math.abs(Math.sin(t * 3));
@@ -600,7 +618,7 @@
     button(g, 110, 278, 240, 50, playEndless, (cx, cy) => {
       text(g, 'エンドレス', cx, cy - 7, 20, '#3a2a10', null); text(g, `3回外したら終わり　ベスト ${best}`, cx, cy + 13, 11, '#8a6420', null);
     }, '#ffe08a');
-    button(g, W - 60, 10, 46, 40, () => { muted = !muted; try { localStorage.setItem('sumo-shoot-mute', muted ? '1' : '0'); } catch {} }, muted ? '🔇' : '🔊', '#fff', 18);
+    shifted(g, ox, () => button(g, W - 60, 10, 46, 40, () => { muted = !muted; try { localStorage.setItem('sumo-shoot-mute', muted ? '1' : '0'); } catch {} }, muted ? '🔇' : '🔊', '#fff', 18));
   }
 
   function draw() {
@@ -622,6 +640,7 @@
     update(dt); draw(); requestAnimationFrame(frame);
   }
   if (location.hash === '#debug') window.DBG = { playStage, playEndless, shoot: v => shoot(v), get s() { return { scene, stage, stageT, ball, shot, balls, score }; } };   // テスト用
+  resize();
   loadImages().then(() => { requestAnimationFrame(frame); })
     .catch(err => { document.body.textContent = err.message; });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
