@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>はなりきしシュート</title>
+<link rel="icon" href="../parts/icon-192.png">
+<link rel="apple-touch-icon" href="../parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#3b2a4a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #2a1e36; display: flex; justify-content: center; align-items: center;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  canvas {
+    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    box-shadow: 0 0 30px rgba(0, 0, 0, .5); touch-action: none; cursor: pointer;
+  }
+  /* ゲーム一覧へ戻るボタン（遊んでいないときだけ、画面の左下に出す） */
+  #toList {
+    position: fixed; z-index: 5; text-decoration: none;
+    left: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px);
+    bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 10px);
+    padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10;
+    background: rgba(255, 248, 220, .94); color: #3a2a10; font-weight: bold; font-size: 14px;
+  }
+  #toList[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="840" height="1400"></canvas>
+<a id="toList" href="../">◀ ゲーム一覧</a>
+
+<script>
+(() => {
+  'use strict';
+  const toList = document.getElementById('toList');
+  const W = 420, H = 700;
+  const BEST_KEY = 'sumo-shoot-best';
+
+  // 番付（全ゲーム共通）。from は番付が上がる得点
+  const RANKS = [
+    { name: '前相撲', from: 0,   body: '#f1efe8', belt: '#111111' },
+    { name: '序の口', from: 6,   body: '#f7e3bd', belt: '#111111' },
+    { name: '序二段', from: 14,  body: '#bfe4f6', belt: '#111111' },
+    { name: '三段目', from: 24,  body: '#c9eaa5', belt: '#111111' },
+    { name: '幕下',   from: 36,  body: '#f8cfe0', belt: '#111111' },
+    { name: '十両',   from: 50,  body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 66,  body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 84,  body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 104, body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 126, body: '#ff9a3c', belt: '#14507a' },
+    { name: '横綱',   from: 150, body: '#ffee00', belt: '#1f5c00' },
+  ];
+  const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
+
+  // ---- 画像（はなりきしの絵は ../parts/ に共通で置いてある） ----
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
+  const IMG = {};
+  const CX = 513, CY = 538, BODY_R = 395;
+  const loadImages = () => Promise.all(SRC.map(n => new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => { IMG[n] = i; res(); }; i.onerror = () => rej(new Error('画像を読み込めません: ' + n)); i.src = `../parts/${n}.png`;
+  })));
+  const tint = (img, color) => {
+    const c = document.createElement('canvas'); c.width = c.height = 1024;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, 1024, 1024); return c;
+  };
+  const SPR_R = 34, DPR = 2, spriteCache = {};
+  function sprite(body, belt) {
+    const key = body + belt;
+    if (spriteCache[key]) return spriteCache[key];
+    const size = Math.ceil(1024 * SPR_R / BODY_R * DPR);
+    const bodyT = tint(IMG.body_color, body), beltT = tint(IMG.mawashi, belt), faces = {};
+    for (const face of ['normal', 'hit', 'win']) {
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+      const d = im => g.drawImage(im, 0, 0, size, size);
+      d(bodyT); d(beltT); d(IMG.body_line); d(face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win);
+      faces[face] = c;
+    }
+    return (spriteCache[key] = faces);
+  }
+  function drawSumo(g, faces, face, x, y, r, sx = 1, sy = 1) {
+    const k = r / BODY_R;
+    g.save(); g.translate(x, y); g.scale(sx, sy);
+    g.drawImage(faces[face], -CX * k, -CY * k, 1024 * k, 1024 * k);
+    g.restore();
+  }
+
+  // ---- 効果音（ブラウザの中で合成） ----
+  let actx = null, muted = false;
+  try { muted = localStorage.getItem('sumo-shoot-mute') === '1'; } catch {}
+  function audio() {
+    if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { actx = null; } }
+    if (actx && actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+  function tone(freq, dur, type = 'sine', vol = 0.15, slide = 0, delay = 0) {
+    const a = audio(); if (!a || muted) return;
+    const o = a.createOscillator(), gn = a.createGain(), t0 = a.currentTime + delay;
+    o.type = type; o.frequency.setValueAtTime(freq, t0);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq * slide), t0 + dur);
+    gn.gain.setValueAtTime(vol, t0); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(gn).connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function noise(dur, vol = 0.08, freq = 1200, q = 1) {
+    const a = audio(); if (!a || muted) return;
+    const len = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const s = a.createBufferSource(), f = a.createBiquadFilter(), gn = a.createGain();
+    f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q; gn.gain.value = vol;
+    s.buffer = buf; s.connect(f).connect(gn).connect(a.destination); s.start();
+  }
+  const SFX = {
+    pull: () => tone(300, 0.05, 'triangle', 0.05),
+    throw: () => { noise(0.18, 0.08, 900); tone(220, 0.12, 'sine', 0.1, 1.8); },
+    bounce: v => tone(110, 0.12, 'sine', Math.min(0.3, 0.06 + v * 0.0003), 0.7),
+    rim: v => { tone(880, 0.18, 'square', Math.min(0.08, 0.02 + v * 0.00008), 0.9); tone(1320, 0.12, 'triangle', 0.05); },
+    board: v => { tone(160, 0.1, 'square', Math.min(0.1, 0.03 + v * 0.0001), 0.8); noise(0.06, 0.06, 400); },
+    swish: () => noise(0.35, 0.16, 3000, 0.7),
+    score: k => { tone(660, 0.12, 'triangle', 0.16); tone(880, 0.18, 'triangle', 0.16, 1, 0.08); if (k) tone(1175, 0.25, 'triangle', 0.16, 1, 0.16); noise(0.6, 0.08, 500); },
+    miss: () => { tone(300, 0.25, 'sawtooth', 0.06, 0.6); },
+    rankup: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.2, 'triangle', 0.15, 1, i * 0.1)); },
+    over: () => { tone(392, 0.3, 'triangle', 0.12, 1); tone(330, 0.3, 'triangle', 0.12, 1, 0.25); tone(262, 0.5, 'triangle', 0.12, 1, 0.5); },
+  };
+
+  // ================= コートと物理 =================
+  const FLOOR = 628, WALL_X = 404, BALL_R = 15, G = 1500;
+  const RIM_HALF = 31;                     // ゴールの内のりの半分
+  const MAX_SPEED = 1250, PULL_K = 6.2;
+  let hoop, shooter;
+  // ゴール: ボード（右の壁）にくっついている。y は高さ、moveA は上下に動く幅
+  function placeHoop(n) {
+    const hy = 230 + Math.random() * Math.min(170, 60 + n * 8);
+    hoop = { x: WALL_X - 10 - RIM_HALF, y: hy, baseY: hy, moveA: n >= 12 ? Math.min(70, (n - 10) * 4) : 0, ph: Math.random() * 6, sway: 0 };
+  }
+  function placeShooter(n) {
+    const far = Math.min(1, n / 20);
+    shooter = { x: 70 + Math.random() * (120 - far * 60), y: FLOOR };
+  }
+  const ballHome = () => ({ x: shooter.x + 14, y: shooter.y - 74 });
+  const rimPts = () => [{ x: hoop.x - RIM_HALF, y: hoop.y }, { x: hoop.x + RIM_HALF, y: hoop.y }];
+
+  // ボールを1歩すすめる。ぶつかったら kind を返す（ガイドの計算と本物の両方で使う）
+  function stepBall(b, dt, onHit) {
+    b.vy += G * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+    // 床
+    if (b.y > FLOOR - BALL_R) { const v = b.vy; b.y = FLOOR - BALL_R; b.vy = -b.vy * 0.62; b.vx *= 0.85; if (onHit) onHit('floor', Math.abs(v), b); }
+    // 右の壁（ボード）
+    if (b.x > WALL_X - BALL_R) { const v = b.vx; b.x = WALL_X - BALL_R; b.vx = -b.vx * 0.55; if (onHit) onHit('board', Math.abs(v), b); }
+    // ゴールの輪（前と奥の2点）
+    for (const p of rimPts()) {
+      const dx = b.x - p.x, dy = b.y - p.y, d = Math.hypot(dx, dy), min = BALL_R + 3;
+      if (d < min && d > 0) {
+        const nx = dx / d, ny = dy / d, vn = b.vx * nx + b.vy * ny;
+        b.x = p.x + nx * min; b.y = p.y + ny * min;
+        if (vn < 0) { b.vx -= 1.6 * vn * nx; b.vy -= 1.6 * vn * ny; b.vx *= 0.92; if (onHit) onHit('rim', Math.abs(vn), b); }
+      }
+    }
+  }
+  // 引っぱり具合から、最初にどこかへ当たるまでの軌道
+  function guidePath(vx, vy) {
+    const b = { x: ballHome().x, y: ballHome().y, vx, vy }, pts = [[b.x, b.y]];
+    let hit = null;
+    for (let i = 0; i < 400 && !hit; i++) {
+      stepBall(b, 1 / 120, (kind) => { hit = kind; });
+      if (i % 3 === 0 || hit) pts.push([b.x, b.y]);
+      if (b.x < -40 || b.y > H + 40) break;
+    }
+    return { pts, hit };
+  }
+
+  // 打った球が入るかを最後まで計算する（テスト用）
+  function simulate(vx, vy) {
+    const b = { x: ballHome().x, y: ballHome().y, vx, vy }, info = { touched: false, scored: false };
+    for (let i = 0; i < 4.5 * 240 && !info.scored; i++) {
+      const py = b.y;
+      stepBall(b, 1 / 240, k => { if (k !== 'floor') info.touched = true; });
+      if (py < hoop.y && b.y >= hoop.y && b.vy > 0 && b.x > hoop.x - RIM_HALF + 4 && b.x < hoop.x + RIM_HALF - 4) info.scored = true;
+      if (b.x < -60) break;
+    }
+    return info;
+  }
+
+  // ================= 状態 =================
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+  let state = 'title', t = 0, score, best, lives, streak, shots, ball, aim, shotInfo, pops, parts, shake, flash, overT, jumpT, rankFlash, lastLv;
+  try { best = +localStorage.getItem(BEST_KEY) || 0; } catch { best = 0; }
+
+  function reset() {
+    score = 0; lives = 3; streak = 0; shots = 0; pops = []; parts = []; shake = 0; flash = 0; jumpT = 0; rankFlash = null; lastLv = 0;
+    placeHoop(0); placeShooter(0); newBall();
+    state = 'play';
+  }
+  function newBall() {
+    const h = ballHome();
+    ball = { x: h.x, y: h.y, vx: 0, vy: 0, spin: 0, ang: 0, flying: false, trail: [] };
+    aim = null; shotInfo = null;
+  }
+
+  function shoot(vx, vy) {
+    ball.vx = vx; ball.vy = vy; ball.flying = true; ball.spin = -vx * 0.02;
+    shotInfo = { t: 0, touched: false, board: false, scored: false, prevY: ball.y, done: false, restT: 0 };
+    jumpT = 0.35; shots++;
+    SFX.throw();
+  }
+
+  function onHit(kind, v) {
+    if (kind === 'rim') { SFX.rim(v); hoop.sway = Math.min(1, hoop.sway + v / 600); shotInfo.touched = true; if (v > 300) shake = 0.12; }
+    else if (kind === 'board') { SFX.board(v); shotInfo.touched = true; shotInfo.board = true; }
+    else if (kind === 'floor' && v > 120) SFX.bounce(v);
+  }
+
+  function scored() {
+    const info = shotInfo; info.scored = true;
+    streak++;
+    let pts = 2, label = 'ナイス！';
+    if (!info.touched) { pts = 3; label = 'スウィッシュ！'; }
+    else if (info.board && !info.rimOnly) label = 'バンク！';
+    const bonus = streak >= 3 ? Math.min(3, Math.floor(streak / 3)) : 0;
+    pts += bonus;
+    score += pts;
+    hoop.sway = 1;
+    pops.push({ x: hoop.x, y: hoop.y - 40, text: `+${pts}`, sub: label + (bonus ? `　${streak}連続！` : ''), t: 0 });
+    SFX.swish(); SFX.score(!info.touched);
+    for (let i = 0; i < 16; i++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2, s = 120 + Math.random() * 220; parts.push({ x: hoop.x, y: hoop.y + 20, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, life: 0.9, c: ['#ffd54f', '#ff7043', '#ffffff', '#81d4fa'][i % 4] }); }
+    const lv = rankOf(score);
+    if (lv > lastLv) {
+      lastLv = lv; rankFlash = { text: `${RANKS[lv].name}に昇進！`, t: 0 }; SFX.rankup(); flash = 0.25;
+      for (let i = 0; i < 40; i++) parts.push({ x: W / 2, y: 200, vx: (Math.random() - 0.5) * 600, vy: -Math.random() * 400, t: 0, life: 1.6, c: ['#c62828', '#7b1fa2', '#2e7d32', '#ef6c00'][i % 4], zab: true, r: Math.random() * 6 });
+    }
+  }
+
+  function endShot() {
+    shotInfo.done = true;
+    if (shotInfo.scored) {
+      placeHoop(score); placeShooter(score);
+    } else {
+      streak = 0; lives--;
+      pops.push({ x: ball.x, y: Math.min(ball.y, FLOOR - 40) - 20, text: 'ミス…', sub: '', t: 0, miss: true });
+      SFX.miss();
+      if (lives <= 0) return gameOver();
+    }
+    setTimeout(() => { if (state === 'play') newBall(); }, 350);
+  }
+
+  function gameOver() {
+    state = 'over'; overT = 0;
+    if (score > best) { best = score; try { localStorage.setItem(BEST_KEY, best); } catch {} }
+    SFX.over();
+  }
+
+  // ================= 入力 =================
+  let buttons = [];
+  function pos(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; }
+  cv.addEventListener('pointerdown', e => {
+    e.preventDefault(); audio();
+    const [x, y] = pos(e);
+    const b = buttons.find(b => x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h);
+    if (b) return b.fn();
+    if (state === 'title') { reset(); return; }
+    if (state === 'over') { if (overT > 0.8) reset(); return; }
+    if (state === 'play' && ball && !ball.flying) { aim = { sx: x, sy: y, x, y }; cv.setPointerCapture(e.pointerId); SFX.pull(); }
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!aim) return;
+    const [x, y] = pos(e); aim.x = x; aim.y = y;
+  });
+  const release = e => {
+    if (!aim) return;
+    const v = aimVel(); aim = null;
+    if (v) shoot(v.vx, v.vy);
+  };
+  cv.addEventListener('pointerup', release);
+  cv.addEventListener('pointercancel', () => { aim = null; });
+  // 引っぱった向きの反対へ打つ（パチンコと同じ）
+  function aimVel() {
+    if (!aim) return null;
+    let dx = aim.sx - aim.x, dy = aim.sy - aim.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 18) return null;
+    let sp = Math.min(MAX_SPEED, len * PULL_K);
+    return { vx: dx / len * sp, vy: dy / len * sp, power: sp / MAX_SPEED };
+  }
+
+  // ================= 更新 =================
+  function update(dt) {
+    t += dt;
+    toList.hidden = !(state === 'title' || state === 'over');
+    if (state === 'over') overT += dt;
+    if (state === 'title') return;
+    // ゴールは点が増えると上下に動く
+    hoop.y = hoop.baseY + Math.sin(t * 1.3 + hoop.ph) * hoop.moveA;
+    hoop.sway = Math.max(0, hoop.sway - dt * 1.5);
+    jumpT = Math.max(0, jumpT - dt);
+    shake = Math.max(0, shake - dt); flash = Math.max(0, flash - dt);
+    pops.forEach(p => { p.t += dt; }); pops = pops.filter(p => p.t < 1.2);
+    parts.forEach(p => { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 700 * dt; if (p.r !== undefined) p.r += dt * 6; });
+    parts = parts.filter(p => p.t < p.life);
+    if (rankFlash) { rankFlash.t += dt; if (rankFlash.t > 1.8) rankFlash = null; }
+    if (state !== 'play' || !ball) return;
+    if (!ball.flying) { const h = ballHome(); ball.x = h.x; ball.y = h.y + Math.sin(t * 4) * 2; return; }
+    // 本物のボール
+    const n = 4;
+    for (let k = 0; k < n; k++) {
+      const py = ball.y;
+      stepBall(ball, dt / n, onHit);
+      // 輪を上から下へ通ったら入った
+      if (!shotInfo.scored && py < hoop.y && ball.y >= hoop.y && ball.vy > 0 && ball.x > hoop.x - RIM_HALF + 4 && ball.x < hoop.x + RIM_HALF - 4) scored();
+    }
+    ball.ang += ball.spin * dt;
+    ball.trail.push([ball.x, ball.y]); if (ball.trail.length > 10) ball.trail.shift();
+    shotInfo.t += dt;
+    const slow = Math.hypot(ball.vx, ball.vy) < 60 && ball.y > FLOOR - BALL_R - 2;
+    if (slow) shotInfo.restT += dt;
+    if (!shotInfo.done && (ball.x < -60 || shotInfo.t > (shotInfo.scored ? 1.2 : 4.5) || shotInfo.restT > 0.4 || (shotInfo.scored && ball.y > FLOOR - BALL_R - 4 && shotInfo.t > 0.6))) endShot();
+  }
+
+  // ================= 描画 =================
+  function text(g, s, x, y, size, color = '#fff', stroke = 'rgba(0,0,0,.55)', align = 'center') {
+    g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`; g.textAlign = align; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = size / 4; g.strokeStyle = stroke; g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
+  }
+  function rrect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+
+  // 背景（国技館ふうの体育館）。一度だけ描いてとっておく
+  let bgCanvas = null;
+  function background() {
+    if (bgCanvas) return bgCanvas;
+    bgCanvas = document.createElement('canvas'); bgCanvas.width = W * 2; bgCanvas.height = H * 2;
+    const g = bgCanvas.getContext('2d'); g.scale(2, 2);
+    // 奥の壁
+    const grd = g.createLinearGradient(0, 0, 0, FLOOR);
+    grd.addColorStop(0, '#3b2a4a'); grd.addColorStop(0.55, '#5a3d55'); grd.addColorStop(1, '#7a5a4a');
+    g.fillStyle = grd; g.fillRect(0, 0, W, FLOOR);
+    // 客席（ぼんやりした観客）
+    for (let row = 0; row < 6; row++) {
+      const y = 300 + row * 34;
+      g.fillStyle = `rgba(20,10,25,${0.25 + row * 0.06})`; g.fillRect(0, y + 10, W, 30);
+      for (let x = 6 + (row % 2) * 9; x < W; x += 18) {
+        const c = ['#c98b6b', '#e8b38f', '#9c6b54', '#f0c9a8'][(x * 7 + row * 3) % 4];
+        g.fillStyle = `rgba(0,0,0,${0.18 + row * 0.03})`; g.beginPath(); g.ellipse(x, y + 20, 8, 9, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = c; g.globalAlpha = 0.35 + row * 0.08; g.beginPath(); g.arc(x, y + 8, 5, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
+      }
+    }
+    // 吊り屋根（国技館の屋根）と四色の房
+    g.fillStyle = '#2b1d14';
+    g.beginPath(); g.moveTo(20, 70); g.lineTo(W - 20, 70); g.lineTo(W - 50, 46); g.lineTo(50, 46); g.closePath(); g.fill();
+    g.fillStyle = '#4e3524'; g.fillRect(30, 70, W - 60, 22);
+    g.fillStyle = '#7b1f1f'; g.fillRect(30, 92, W - 60, 8);
+    for (let x = 40; x < W - 30; x += 22) { g.fillStyle = 'rgba(255,215,120,.6)'; g.fillRect(x, 76, 10, 3); }
+    [['#2e7d32', 40], ['#c62828', W - 40]].forEach(([c, x]) => {
+      g.fillStyle = c; g.beginPath(); g.moveTo(x - 7, 100); g.lineTo(x + 7, 100); g.lineTo(x + 10, 150); g.lineTo(x - 10, 150); g.closePath(); g.fill();
+      g.beginPath(); g.arc(x, 100, 8, 0, Math.PI * 2); g.fill();
+    });
+    // のぼり
+    [['#1565c0', 70], ['#c62828', 120], ['#2e7d32', 300], ['#f9a825', 350]].forEach(([c, x]) => {
+      g.fillStyle = c; g.fillRect(x, 150, 22, 120);
+      g.fillStyle = 'rgba(255,255,255,.8)'; for (let k = 0; k < 4; k++) g.fillRect(x + 8, 162 + k * 26, 6, 16);
+      g.fillStyle = '#ddd'; g.fillRect(x - 2, 146, 26, 4);
+    });
+    // 床（板張り）
+    const fg = g.createLinearGradient(0, FLOOR, 0, H);
+    fg.addColorStop(0, '#d7a565'); fg.addColorStop(1, '#a87638');
+    g.fillStyle = fg; g.fillRect(0, FLOOR, W, H - FLOOR);
+    g.strokeStyle = 'rgba(90,50,10,.25)'; g.lineWidth = 1;
+    for (let y = FLOOR + 10; y < H; y += 12) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+    for (let k = 0; k < 30; k++) { const y = FLOOR + 10 + (k % 6) * 12, x = (k * 97) % W; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 12); g.stroke(); }
+    g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(0, FLOOR, W, 3);
+    // 床の白線
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 3;
+    g.beginPath(); g.ellipse(WALL_X, FLOOR + 30, 190, 22, 0, Math.PI * 0.5, Math.PI * 1.5); g.stroke();
+    return bgCanvas;
+  }
+
+  function drawHoop(g, front) {
+    const { x, y } = hoop, L = x - RIM_HALF, R = x + RIM_HALF;
+    if (!front) {
+      // ボード（右の壁についている）
+      g.fillStyle = '#f5f5f5'; rrect(g, WALL_X - 4, y - 112, 16, 140, 4); g.fill();
+      g.strokeStyle = '#c62828'; g.lineWidth = 3; g.strokeRect(WALL_X - 2, y - 60, 10, 50);
+      g.fillStyle = '#9e9e9e'; g.fillRect(WALL_X + 8, y - 112, 12, 140);
+      // 奥の輪
+      g.strokeStyle = '#b5410f'; g.lineWidth = 4; g.beginPath(); g.ellipse(x, y, RIM_HALF, 7, 0, Math.PI, Math.PI * 2); g.stroke();
+      return;
+    }
+    // ネット（入ると揺れる）
+    const sw = hoop.sway, wob = Math.sin(t * 25) * sw * 5;
+    g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 1.6;
+    const rows = 4, nh = 42 + sw * 10;
+    for (let i = 0; i <= 6; i++) {
+      const top = L + (R - L) * i / 6, bot = x - RIM_HALF * 0.55 + RIM_HALF * 1.1 * i / 6 + wob;
+      g.beginPath(); g.moveTo(top, y + 2); g.quadraticCurveTo((top + bot) / 2 + wob, y + nh * 0.5, bot, y + nh); g.stroke();
+    }
+    for (let r = 1; r <= rows; r++) {
+      const k = r / rows, yy = y + nh * k, half = RIM_HALF * (1 - k * 0.45);
+      g.beginPath(); g.ellipse(x + wob * k, yy, half, 4, 0, 0, Math.PI); g.stroke();
+    }
+    // 手前の輪
+    g.strokeStyle = '#e65100'; g.lineWidth = 5; g.beginPath(); g.ellipse(x, y, RIM_HALF, 7, 0, 0, Math.PI); g.stroke();
+    g.fillStyle = '#e65100'; g.beginPath(); g.arc(L, y, 3.5, 0, Math.PI * 2); g.fill();
+    g.fillRect(R, y - 3, WALL_X - R, 6);
+  }
+
+  function drawBall(g, x, y, ang, alpha = 1) {
+    g.save(); g.globalAlpha = alpha; g.translate(x, y); g.rotate(ang);
+    const grd = g.createRadialGradient(-5, -6, 2, 0, 0, BALL_R);
+    grd.addColorStop(0, '#ffb35c'); grd.addColorStop(1, '#e0601a');
+    g.fillStyle = grd; g.beginPath(); g.arc(0, 0, BALL_R, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#3a1c08'; g.lineWidth = 1.6;
+    g.beginPath(); g.arc(0, 0, BALL_R, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.moveTo(-BALL_R, 0); g.lineTo(BALL_R, 0); g.moveTo(0, -BALL_R); g.lineTo(0, BALL_R); g.stroke();
+    g.beginPath(); g.arc(-BALL_R * 1.25, 0, BALL_R * 0.9, -0.9, 0.9); g.stroke();
+    g.beginPath(); g.arc(BALL_R * 1.25, 0, BALL_R * 0.9, Math.PI - 0.9, Math.PI + 0.9); g.stroke();
+    g.restore();
+  }
+
+  function drawShooter(g) {
+    const lv = rankOf(score), rk = RANKS[lv];
+    // 打つ瞬間にぴょんと跳ぶ。引っぱっている間はぐっと縮む
+    let sy = 1, sx = 1, up = 0;
+    if (jumpT > 0) { const k = jumpT / 0.35; up = Math.sin(k * Math.PI) * 26; sy = 1 + Math.sin(k * Math.PI) * 0.08; sx = 2 - sy; }
+    const v = aimVel(); if (v) { sy = 1 - v.power * 0.12; sx = 1 + v.power * 0.1; }
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(shooter.x, FLOOR + 4, 30 - up * 0.3, 7, 0, 0, Math.PI * 2); g.fill();
+    let face = 'normal';
+    if (shotInfo && shotInfo.scored) face = 'win';
+    else if (shotInfo && shotInfo.done && !shotInfo.scored) face = 'hit';
+    const r = 32;
+    g.save(); g.translate(shooter.x, FLOOR - up); g.scale(sx, sy);
+    drawSumo(g, sprite(rk.body, rk.belt), face, 0, -r * 1.05, r);
+    g.restore();
+  }
+
+  function drawGuide(g) {
+    const v = aimVel();
+    if (!aim) return;
+    // 引っぱっている線
+    g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 3; g.setLineDash([4, 6]);
+    g.beginPath(); g.moveTo(aim.sx, aim.sy); g.lineTo(aim.x, aim.y); g.stroke(); g.setLineDash([]);
+    g.fillStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.arc(aim.sx, aim.sy, 6, 0, Math.PI * 2); g.fill();
+    if (!v) return;
+    // 最初に当たるところまでの軌道
+    const { pts, hit } = guidePath(v.vx, v.vy);
+    for (let i = 1; i < pts.length; i++) {
+      if (i % 2) continue;
+      const a = 0.95 - i / pts.length * 0.5;
+      g.fillStyle = `rgba(255,255,255,${a})`;
+      g.beginPath(); g.arc(pts[i][0], pts[i][1], 3.2, 0, Math.PI * 2); g.fill();
+    }
+    if (hit) {
+      const [hx, hy] = pts[pts.length - 1];
+      g.strokeStyle = '#ffe082'; g.lineWidth = 2.5; g.beginPath(); g.arc(hx, hy, 9, 0, Math.PI * 2); g.stroke();
+    }
+    // 強さのめやす
+    const p = v.power;
+    rrect(g, shooter.x - 30, FLOOR + 16, 60, 8, 4); g.fillStyle = 'rgba(0,0,0,.4)'; g.fill();
+    rrect(g, shooter.x - 30, FLOOR + 16, 60 * p, 8, 4); g.fillStyle = p > 0.95 ? '#ff7043' : '#ffd54f'; g.fill();
+  }
+
+  function drawHud(g) {
+    const lv = rankOf(score);
+    rrect(g, 10, 10, 130, 54, 14); g.fillStyle = 'rgba(0,0,0,.35)'; g.fill();
+    text(g, String(score), 75, 32, 28, '#fff');
+    text(g, RANKS[lv].name, 75, 55, 12, '#ffe082');
+    // 残りの回数（ボール）
+    for (let i = 0; i < 3; i++) drawBall(g, W - 120 + i * 30, 30, 0, i < lives ? 1 : 0.2);
+    text(g, `ベスト ${best}`, W - 90, 56, 11, '#ddd');
+    if (streak >= 2) text(g, `${streak}連続`, 75, 80, 14, '#ffd54f');
+    const btn = { x: W - 34, y: 10, w: 26, h: 26 };
+    text(g, muted ? '🔇' : '🔊', btn.x + 13, btn.y + 13 + 50, 14);
+    buttons.push({ x: W - 40, y: 52, w: 34, h: 30, fn: () => { muted = !muted; try { localStorage.setItem('sumo-shoot-mute', muted ? '1' : '0'); } catch {} } });
+  }
+
+  function draw() {
+    const g = ctx;
+    buttons = [];
+    g.save();
+    if (shake > 0) g.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+    g.drawImage(background(), 0, 0, W, H);
+    if (state === 'title') { g.restore(); return drawTitle(g); }
+    drawHoop(g, false);
+    drawShooter(g);
+    // ボールの残像
+    if (ball) {
+      if (ball.flying) ball.trail.forEach(([x, y], i) => { g.fillStyle = `rgba(255,170,80,${i / ball.trail.length * 0.25})`; g.beginPath(); g.arc(x, y, BALL_R * (0.4 + i / ball.trail.length * 0.5), 0, Math.PI * 2); g.fill(); });
+      // 輪より奥にいる間（入る前）は、手前の輪とネットの下に描く
+      drawBall(g, ball.x, ball.y, ball.ang);
+    }
+    drawHoop(g, true);
+    drawGuide(g);
+    for (const p of parts) {
+      g.save(); g.globalAlpha = 1 - p.t / p.life;
+      if (p.zab) { g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; rrect(g, -9, -7, 18, 14, 4); g.fill(); }
+      else { g.fillStyle = p.c; g.beginPath(); g.arc(p.x, p.y, 3, 0, Math.PI * 2); g.fill(); }
+      g.restore();
+    }
+    for (const p of pops) {
+      const a = Math.min(1, (1.2 - p.t) * 3), s = 1 + Math.max(0, 0.15 - p.t) * 3;
+      g.save(); g.globalAlpha = a; g.translate(p.x - (p.miss ? 0 : 40), p.y - p.t * 40); g.scale(s, s);
+      text(g, p.text, 0, 0, p.miss ? 22 : 30, p.miss ? '#90caf9' : '#ffe082', 'rgba(0,0,0,.6)');
+      if (p.sub) text(g, p.sub, 0, 26, 14, '#fff');
+      g.restore();
+    }
+    g.restore();
+    drawHud(g);
+    if (rankFlash) {
+      const k = Math.min(1, rankFlash.t * 5), a = Math.min(1, (1.8 - rankFlash.t) * 3);
+      g.save(); g.globalAlpha = a; g.translate(W / 2, 190); g.scale(0.6 + k * 0.4, 0.6 + k * 0.4);
+      text(g, rankFlash.text, 0, 0, 32, '#ffe082', '#7a2a00'); g.restore();
+    }
+    if (flash > 0) { g.fillStyle = `rgba(255,255,255,${flash})`; g.fillRect(0, 0, W, H); }
+    if (state === 'play' && shots === 0 && !aim) {
+      const k = (t % 1.6) / 1.6, h = ballHome();
+      text(g, '引っぱって、はなしてシュート！', W / 2, 150, 19, '#fff');
+      g.save(); g.globalAlpha = 1 - k * 0.5; text(g, '👆', h.x + 10 - k * 50, h.y + 30 + k * 50, 30); g.restore();
+    }
+    if (state === 'over') drawOver(g);
+  }
+
+  function drawTitle(g) {
+    g.fillStyle = 'rgba(20,10,30,.35)'; g.fillRect(0, 0, W, H);
+    text(g, 'はなりきし', W / 2, 190, 30, '#ffe082', '#3b1a00');
+    text(g, 'シュート', W / 2, 245, 56, '#fff', '#7a2a00');
+    const bob = Math.abs(Math.sin(t * 3)) * 20;
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(W / 2, FLOOR + 4, 34, 7, 0, 0, Math.PI * 2); g.fill();
+    drawSumo(g, sprite(RANKS[0].body, RANKS[0].belt), 'normal', W / 2, FLOOR - 36 - bob * 0.2, 34);
+    drawBall(g, W / 2 + 10, FLOOR - 100 - bob * 2.2, t * 4);
+    text(g, 'タップではじめる', W / 2, 420, 22, '#9dffb0');
+    text(g, '3回はずしたら終わり', W / 2, 455, 14, '#eee');
+    text(g, `ベスト ${best}`, W / 2, 485, 16, '#ffe082');
+  }
+
+  function drawOver(g) {
+    const a = Math.min(1, overT * 3);
+    g.save(); g.globalAlpha = a;
+    g.fillStyle = 'rgba(15,8,25,.6)'; g.fillRect(0, 0, W, H);
+    g.drawImage(IMG.home, W / 2 - 60, 140, 120, 120);
+    text(g, 'しあい終了！', W / 2, 290, 34, '#fff', '#7a2a00');
+    text(g, `${score} 点`, W / 2, 345, 40, '#ffe082');
+    text(g, `番付　${RANKS[rankOf(score)].name}`, W / 2, 392, 18, '#fff');
+    text(g, score >= best && score > 0 ? 'ベスト更新！' : `ベスト ${best}`, W / 2, 424, 16, '#ffd54f');
+    if (overT > 0.8) text(g, 'タップで もういちど', W / 2, 490, 22, '#9dffb0');
+    g.restore();
+  }
+
+  let last = 0;
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
+    update(dt); draw(); requestAnimationFrame(frame);
+  }
+  if (location.hash === '#debug') window.DBG = { simulate, place: n => { placeHoop(n); placeShooter(n); }, shoot: (vx, vy) => shoot(vx, vy), get s() { return { state, score, lives, hoop, shooter, ball, shotInfo }; }, reset, guidePath, ballHome: () => ballHome() };   // テスト用
+  loadImages().then(() => { requestAnimationFrame(frame); })
+    .catch(err => { document.body.textContent = err.message; });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>

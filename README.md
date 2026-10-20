@@ -14,6 +14,7 @@
 ├─ manifest.webmanifest  一覧ページのアプリ設定
 ├─ parts/                全ゲーム共通の画像（はなりきしの絵、アイコン）
 ├─ thumbs/               一覧ページ用のサムネイル（360x600 の jpg）
+├─ _docs/PLANS.md        これから作るゲームと、必要な素材のメモ（公開されません）
 ├─ _template/            新しいゲームの雛形（名前が _ で始まるフォルダは公開されません）
 ├─ suika/                はなりきし出世（パズル）
 ├─ flappy/               はなりきしフラッピー
@@ -22,6 +23,7 @@
 ├─ survivors/            はなりきしサバイバーズ
 ├─ shogi/                はなりきし将棋
 ├─ tachiai/              はなりきし 立ち合い（ステージは levels.js）
+├─ shoot/                はなりきしシュート
 └─ _chanko/              はなりきし ちゃんこダンジョン（非公開。公開するときは chanko/ に戻し、
                           thumb.jpg を thumbs/chanko.jpg へ移して games.json に足す）
 ```

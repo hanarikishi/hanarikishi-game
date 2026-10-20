@@ -1,5 +1,5 @@
 // オフラインでも遊べるようにキャッシュする。更新したら VERSION を上げる。
-const VERSION = 'tachiai-v1';
+const VERSION = 'tachiai-v2';
 const FILES = [
   './', './index.html', './manifest.webmanifest', './matter.min.js', './levels.js',
   '../parts/body_color.png', '../parts/mawashi.png', '../parts/body_line.png',
