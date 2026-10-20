@@ -14,14 +14,15 @@
 ├─ manifest.webmanifest  一覧ページのアプリ設定
 ├─ parts/                全ゲーム共通の画像（はなりきしの絵、アイコン）
 ├─ thumbs/               一覧ページ用のサムネイル（360x600 の jpg）
-├─ _template/            新しいゲームの雛形（公開はされません）
+├─ _template/            新しいゲームの雛形（名前が _ で始まるフォルダは公開されません）
 ├─ suika/                はなりきし出世（パズル）
 ├─ flappy/               はなりきしフラッピー
 ├─ crossy/               はなりきしクロッシー
 ├─ stack/                はなりきしスタック
 ├─ survivors/            はなりきしサバイバーズ
 ├─ shogi/                はなりきし将棋
-└─ chanko/               はなりきし ちゃんこダンジョン
+└─ _chanko/              はなりきし ちゃんこダンジョン（非公開。公開するときは chanko/ に戻し、
+                          thumb.jpg を thumbs/chanko.jpg へ移して games.json に足す）
 ```
 
 ## 新しいゲームを追加する手順
