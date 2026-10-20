@@ -31,8 +31,8 @@
 (() => {
   'use strict';
   const W = 420, H = 700;
-  const BEST_KEY = 'sumo-shogi-best';   // 最高連勝
-  const RUN_KEY = 'sumo-shogi-run';     // いまの連勝（続きから遊べるように）
+  const BEST_KEY = 'sumo-shogi-best';   // 最高連勝（3つの難易度で一番いいもの。一覧ページに出る）
+  const RUN_KEY = d => `sumo-shogi-run-${d}`, DIFF_BEST_KEY = d => `sumo-shogi-best-${d}`;   // 難易度ごとの連勝と最高
 
   // 番付（全ゲーム共通）。このゲームでは連勝数がそのまま番付になる
   const RANKS = [
@@ -222,15 +222,14 @@
     if (go(0)) for (const i of cells) bd[i] = bd[i] >= PRO ? pick[i] | PRO : pick[i];
     return { bd, h: st.h };
   }
-  const LEVELS = [   // 連勝数ごとの強さ（読む深さ・並びの数・わざと入れるゆらぎ）
-    { depth: 1, samples: 2, noise: 4 }, { depth: 1, samples: 3, noise: 2 }, { depth: 2, samples: 2, noise: 3 },
-    { depth: 2, samples: 3, noise: 2 }, { depth: 2, samples: 4, noise: 1 }, { depth: 2, samples: 5, noise: 0.6 },
-    { depth: 2, samples: 6, noise: 0.3 }, { depth: 2, samples: 8, noise: 0 }, { depth: 3, samples: 3, noise: 0.3 },
-    { depth: 3, samples: 4, noise: 0 }, { depth: 3, samples: 5, noise: 0 },
+  const LEVELS = [   // 難易度ごとの強さ（読む深さ・並びの数・わざと入れるゆらぎ）
+    { name: 'やさしい', depth: 1, samples: 2, noise: 3, color: '#c9eaa5' },
+    { name: 'ふつう',   depth: 2, samples: 3, noise: 1, color: '#ffe08a' },
+    { name: 'つよい',   depth: 2, samples: 8, noise: 0, color: '#ffb3a1' },
   ];
   // st の下側の駒の中身は見ずに、cands と counts から当てはめ直して読む
   function cpuMove(st, cands, counts, lv) {
-    const L = LEVELS[Math.min(lv, LEVELS.length - 1)];
+    const L = LEVELS[lv];
     const ms = gen(st, -1, []);
     if (!ms.length) return null;
     const boards = [];
@@ -276,7 +275,9 @@
   ctx.scale(cv.width / W, cv.height / H);
   const load = k => { try { return +localStorage.getItem(k) || 0; } catch { return 0; } };
   const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-  let best = load(BEST_KEY), streak = load(RUN_KEY);
+  const streaks = LEVELS.map((L, d) => load(RUN_KEY(d))), bests = LEVELS.map((L, d) => load(DIFF_BEST_KEY(d)));
+  let diff = 1, streak = streaks[diff], best = bests[diff];
+  function chooseDiff(d) { diff = d; streak = streaks[d]; best = bests[d]; newSetup(); }
 
   const BX = 210, BY = 350, CELL = 58;
   const cellX = i => BX + (i % 5 - 2) * CELL, cellY = i => BY + ((i / 5 | 0) - 3.5) * CELL;
@@ -374,7 +375,7 @@
     thinking = true;
     setTimeout(() => {
       const v = cpuView();
-      const m = cpuMove(state(), v.cands, v.counts, streak);
+      const m = cpuMove(state(), v.cands, v.counts, diff);
       thinking = false;
       if (m) play(m, -1); else finish(1, 'stuck');
     }, 350);
@@ -382,9 +383,11 @@
 
   function finish(winner, how) {
     const r = { winner, how, from: streak, to: streak, t: 0 };
-    if (winner === 1) { streak++; if (streak > best) { best = streak; save(BEST_KEY, best); } }
+    if (winner === 1) { streak++; if (streak > best) { best = streak; save(DIFF_BEST_KEY(diff), best); } }
     else if (winner === -1) streak = 0;
-    save(RUN_KEY, streak);
+    streaks[diff] = streak; bests[diff] = best;
+    save(RUN_KEY(diff), streak);
+    save(BEST_KEY, Math.max(...bests));
     r.to = streak;
     result = r;
     scene = 'result';
@@ -566,7 +569,7 @@
     const rk = RANKS[rankOfStreak(streak)];
     g.fillStyle = 'rgba(255,248,220,.96)'; g.fillRect(0, 0, W, 50);
     g.strokeStyle = '#3a2a10'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 50); g.lineTo(W, 50); g.stroke();
-    text(g, `${rk.name}  ${streak}連勝`, 14, 26, 19, '#3a2a10', 'rgba(0,0,0,0)', 'left');
+    text(g, `${LEVELS[diff].name}  ${rk.name}  ${streak}連勝`, 14, 26, 17, '#3a2a10', 'rgba(0,0,0,0)', 'left');
     if (scene === 'play') text(g, `${ply + 1}手目`, W - 100, 26, 16, '#3a2a10', 'rgba(0,0,0,0)', 'right');
     if (scene === 'play' || scene === 'setup') button(g, 'やめる', '', W - 86, 8, 74, 34, '#fff', () => { scene = 'title'; }, 18);
   }
@@ -648,11 +651,13 @@
     const rk = RANKS[Math.min(rankOfStreak(streak), RANKS.length - 2)];
     drawSumo(g, sprite(rk.body, rk.belt), 'normal', W / 2 + 62, 268 - bob, 30);
     drawDots(g, K, W / 2 + 62, 268 - bob);
-    const rr = RANKS[rankOfStreak(streak)];
-    button(g, '対局する（CPU）', `いま ${rr.name}・${streak}連勝 ／ 最高 ${best}連勝`, 60, 380, W - 120, 68, '#ffe08a', newSetup);
-    button(g, 'あそびかた', '', 60, 470, W - 120, 52, '#fff', () => { scene = 'rules'; });
-    text(g, '5×8の将棋。相手の駒は何か分からない！', W / 2, 570, 15, '#6b5530');
-    text(g, '勝つたびに番付が上がり、CPUも強くなる', W / 2, 598, 14, '#6b5530');
+    LEVELS.forEach((L, d) => {
+      const rr = RANKS[rankOfStreak(streaks[d])];
+      button(g, L.name, `${rr.name}・${streaks[d]}連勝 ／ 最高 ${bests[d]}連勝`, 60, 350 + d * 72, W - 120, 60, L.color, () => chooseDiff(d));
+    });
+    button(g, 'あそびかた', '', 60, 572, W - 120, 46, '#fff', () => { scene = 'rules'; }, 20);
+    text(g, '5×8の将棋。相手の駒は何か分からない！', W / 2, 650, 14, '#6b5530');
+    text(g, '勝つたびに番付が上がる（難易度ごと）', W / 2, 674, 13, '#6b5530');
   }
 
   function drawRules(g) {
