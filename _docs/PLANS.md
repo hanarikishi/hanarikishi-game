@@ -45,8 +45,8 @@
 
 ## 公開中のゲームで、素材があると良くなるもの
 
-### はなりきし 立ち合い（`tachiai/`）
-いまは20面。21〜30面は `tachiai/levels.js` の `TACHIAI_LEVELS_EXTRA` に保管している（全部ヒントでクリアできることは確かめ済み）。戻すときは `TACHIAI_LEVELS` の最後に足す。
+### はなりきし 立ち合い（`_tachiai/`・いまは非公開）
+いまは20面。公開するときはフォルダ名を `tachiai/` に戻し、`_tachiai/thumb.jpg` を `thumbs/tachiai.jpg` に移して `games.json` に足す。21〜30面は `_tachiai/levels.js` の `TACHIAI_LEVELS_EXTRA` に保管している（全部ヒントでクリアできることは確かめ済み）。戻すときは `TACHIAI_LEVELS` の最後に足す。
 
 | 素材 | いまの仮のもの | あると |
 |---|---|---|
