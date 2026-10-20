@@ -1,5 +1,15 @@
 [
   {
+    "id": "tachiai",
+    "title": "はなりきし 立ち合い",
+    "desc": "墨で線を描いて、東と西をぶつける物理パズル",
+    "path": "tachiai/",
+    "thumb": "thumbs/tachiai.jpg",
+    "tags": ["パズル"],
+    "added": "2026-10-20",
+    "best": { "key": "sumo-tachiai-best", "type": "number", "unit": "★" }
+  },
+  {
     "id": "shogi",
     "title": "はなりきし将棋",
     "desc": "5×8の将棋。相手の駒は何か分からない",

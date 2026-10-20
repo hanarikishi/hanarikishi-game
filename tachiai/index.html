@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>はなりきし 立ち合い</title>
+<link rel="icon" href="../parts/icon-192.png">
+<link rel="apple-touch-icon" href="../parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f4ecd8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #e2d6b8; display: flex; justify-content: center; align-items: center;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  canvas {
+    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    box-shadow: 0 0 30px rgba(60, 40, 0, .3); touch-action: none; cursor: crosshair;
+  }
+  /* ゲーム一覧へ戻るボタン（遊んでいないときだけ、画面の左下に出す） */
+  #toList {
+    position: fixed; z-index: 5; text-decoration: none;
+    left: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px);
+    bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 10px);
+    padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10;
+    background: rgba(255, 248, 220, .94); color: #3a2a10; font-weight: bold; font-size: 14px;
+  }
+  #toList[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="840" height="1400"></canvas>
+<a id="toList" href="../">◀ ゲーム一覧</a>
+<script src="matter.min.js"></script>
+<script src="levels.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  // ================= 物理とステージ（ここから。画面なしでも動く） =================
+  const BALL_R = 22, LINE_W = 7, STEP = 1000 / 60;
+  const FIELD_W = 420, FIELD_H = 700;
+  // ステージ: a=東（赤）、b=西（青）の最初の位置、ink=墨の量、objs=置いてある物、hint=お手本の線
+  //   wall: 土俵の板（動かない）  ice: つるつるの板  box: 米俵（動く）  hinge: 真ん中で回る板
+  //   pot: あつあつのちゃんこ鍋（触ったら失敗）  zabuton: はねる座布団  mover: 行ったり来たりする板  peg: 丸い杭
+  const LEVELS = window.TACHIAI_LEVELS;
+
+  function createWorld(L) {
+    const { Engine, Bodies, Body, Composite, Constraint, Events } = Matter;
+    const engine = Engine.create({ gravity: { x: 0, y: 1, scale: 0.004 }, positionIterations: 10, velocityIterations: 8 });
+    const w = { engine, L, objs: [], movers: [], strokes: [], state: 'draw', result: null, t: 0, ink: L.ink || 600, used: 0, hits: [] };
+    const ballOpt = { restitution: 0.2, friction: 0.3, frictionAir: 0.003, density: 0.002, frictionStatic: 0.6 };
+    w.a = Bodies.circle(L.a[0], L.a[1], BALL_R, { ...ballOpt, label: 'A' });
+    w.b = Bodies.circle(L.b[0], L.b[1], BALL_R, { ...ballOpt, label: 'B' });
+    const rad = d => (d || 0) * Math.PI / 180;
+    for (const o of L.objs || []) {
+      let body, extra = null;
+      if (o.t === 'peg') body = Bodies.circle(o.x, o.y, o.r, { isStatic: true, friction: 0.4, label: 'peg' });
+      else if (o.t === 'box') body = Bodies.rectangle(o.x, o.y, o.w, o.h, { angle: rad(o.a), density: o.d || 0.0012, friction: 0.7, frictionStatic: 0.9, restitution: 0.05, chamfer: { radius: 6 }, label: 'box' });
+      else if (o.t === 'hinge') {
+        body = Bodies.rectangle(o.x, o.y, o.w, o.h, { angle: rad(o.a), density: 0.001, friction: 0.6, chamfer: { radius: 4 }, label: 'hinge' });
+        extra = Constraint.create({ pointA: { x: o.x, y: o.y }, bodyB: body, pointB: { x: 0, y: 0 }, length: 0, stiffness: 1 });
+      } else if (o.t === 'pot') body = Bodies.rectangle(o.x, o.y, o.w, o.h, { isStatic: true, isSensor: true, label: 'pot' });
+      else {
+        body = Bodies.rectangle(o.x, o.y, o.w, o.h, {
+          isStatic: true, angle: rad(o.a), chamfer: { radius: Math.min(6, o.h / 2 - 0.5) },
+          friction: o.t === 'ice' ? 0 : 1, frictionStatic: o.t === 'ice' ? 0 : 6, restitution: o.t === 'zabuton' ? 1.15 : 0.05, label: o.t,
+        });
+      }
+      body.def = o;
+      w.objs.push(body);
+      Composite.add(engine.world, body);
+      if (extra) Composite.add(engine.world, extra);
+      if (o.t === 'mover') w.movers.push(body);
+    }
+    Composite.add(engine.world, [w.a, w.b]);
+    Events.on(engine, 'collisionStart', ev => {
+      for (const p of ev.pairs) {
+        const la = p.bodyA.parent.label, lb = p.bodyB.parent.label;
+        const has = l => la === l || lb === l;
+        if (has('A') && has('B')) { if (!w.result) w.result = 'win'; }
+        else if (has('pot') && (has('A') || has('B'))) { if (!w.result) w.result = 'pot'; }
+        else if (has('A') || has('B')) {
+          const s = Math.hypot(p.bodyA.velocity.x - p.bodyB.velocity.x, p.bodyA.velocity.y - p.bodyB.velocity.y);
+          if (s > 2.5) w.hits.push({ s, label: has('zabuton') ? 'zabuton' : 'hit' });
+        }
+      }
+    });
+    return w;
+  }
+
+  // 点が物に重なっていないか（物の上には線を描けない）
+  function pointFree(w, x, y) {
+    if (x < 4 || x > FIELD_W - 4 || y < 74 || y > FIELD_H - 4) return false;
+    const m = LINE_W / 2 + 3;
+    for (const b of [w.a, w.b]) if (Math.hypot(b.position.x - x, b.position.y - y) < BALL_R + m) return false;
+    const pts = [[x, y], [x + m, y], [x - m, y], [x, y + m], [x, y - m]];
+    for (const b of w.objs) for (const [px, py] of pts) if (Matter.Vertices.contains(b.vertices, { x: px, y: py })) return false;
+    return true;
+  }
+
+  // 描いた線（いくつかの切れ目のある線のまとまり）を、1つの重さのある物にする
+  function addStroke(w, runs) {
+    const { Bodies, Body, Composite } = Matter;
+    const parts = [];
+    for (const run of runs) for (let i = 1; i < run.length; i++) {
+      const [x1, y1] = run[i - 1], [x2, y2] = run[i];
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      if (len < 0.5) continue;
+      parts.push(Bodies.rectangle((x1 + x2) / 2, (y1 + y2) / 2, len + LINE_W, LINE_W, {
+        angle: Math.atan2(y2 - y1, x2 - x1), chamfer: { radius: LINE_W / 2 - 0.5 }, density: 0.004, friction: 1, frictionStatic: 6, restitution: 0.05,
+      }));
+    }
+    if (parts.length) {
+      const body = Body.create({ parts, label: 'line', friction: 1, frictionStatic: 6 });
+      // matter.js はつないだ部品の位置を考えずに回りにくさを足すので、長い線がくるくる回ってしまう。正しく計算し直す
+      let inertia = 0;
+      for (const part of parts) inertia += part.inertia + part.mass * ((part.position.x - body.position.x) ** 2 + (part.position.y - body.position.y) ** 2);
+      Body.setInertia(body, inertia);
+      body.runs = runs.map(run => run.map(([x, y]) => [x - body.position.x, y - body.position.y]));
+      Composite.add(w.engine.world, body);
+      w.strokes.push(body);
+    }
+    w.state = 'run';
+  }
+
+  function stepWorld(w) {
+    if (w.state !== 'run') return;
+    w.t += 1 / 60;
+    for (const b of w.movers) {
+      const o = b.def, k = Math.sin(w.t * Math.PI * 2 / (o.period || 3));
+      const nx = o.x + (o.dx || 0) * k, ny = o.y + (o.dy || 0) * k;
+      Matter.Body.setVelocity(b, { x: nx - b.position.x, y: ny - b.position.y });
+      Matter.Body.setPosition(b, { x: nx, y: ny });
+    }
+    // 細い線をすり抜けないように、1コマを4回に分けて計算する
+    for (let k = 0; k < 4; k++) Matter.Engine.update(w.engine, STEP / 4);
+    if (!w.result && Math.hypot(w.a.position.x - w.b.position.x, w.a.position.y - w.b.position.y) <= BALL_R * 2 + 0.6) w.result = 'win';
+    if (!w.result) for (const b of [w.a, w.b]) {
+      const p = b.position;
+      if (p.y > FIELD_H + 60 || p.x < -60 || p.x > FIELD_W + 60) w.result = 'fall';
+    }
+  }
+
+  // お手本の線を、実際に描いたのと同じように点に分ける（物に重なる所は切れる・墨がなくなったら終わり）
+  function strokeFromPath(w, path) {
+    const runs = []; let run = null, used = 0, last = null;
+    for (let i = 1; i < path.length; i++) {
+      const [x1, y1] = path[i - 1], [x2, y2] = path[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / 6));
+      for (let k = (i === 1 ? 0 : 1); k <= n; k++) {
+        const x = x1 + (x2 - x1) * k / n, y = y1 + (y2 - y1) * k / n;
+        if (!pointFree(w, x, y)) { run = null; last = null; continue; }
+        if (last) { const d = Math.hypot(x - last[0], y - last[1]); if (used + d > w.ink) return { runs, used }; used += d; }
+        if (!run) { run = []; runs.push(run); }
+        run.push([x, y]); last = [x, y];
+      }
+    }
+    return { runs: runs.filter(r => r.length > 1), used };
+  }
+  const starsFor = (used, ink) => used <= ink * 0.4 ? 3 : used <= ink * 0.7 ? 2 : 1;
+  // ================= 物理とステージ（ここまで） =================
+
+  const toList = document.getElementById('toList');
+  const W = 420, H = 700;
+  const PROGRESS_KEY = 'sumo-tachiai-progress';   // ステージごとの★
+  const BEST_KEY = 'sumo-tachiai-best';           // ★の合計（一覧ページに出す）
+
+  // ---- 画像（はなりきしの絵は ../parts/ に共通で置いてある） ----
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
+  const IMG = {};
+  const CX = 513, CY = 538, BODY_R = 395;
+  const loadImages = () => Promise.all(SRC.map(n => new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => { IMG[n] = i; res(); }; i.onerror = () => rej(new Error('画像を読み込めません: ' + n)); i.src = `../parts/${n}.png`;
+  })));
+  const tint = (img, color) => {
+    const c = document.createElement('canvas'); c.width = c.height = 1024;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, 1024, 1024); return c;
+  };
+  const SPR_R = 30, DPR = 2, spriteCache = {};
+  function sprite(body, belt) {
+    const key = body + belt;
+    if (spriteCache[key]) return spriteCache[key];
+    const size = Math.ceil(1024 * SPR_R / BODY_R * DPR);
+    const bodyT = tint(IMG.body_color, body), beltT = tint(IMG.mawashi, belt), faces = {};
+    for (const face of ['normal', 'hit', 'win']) {
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+      const d = im => g.drawImage(im, 0, 0, size, size);
+      d(bodyT); d(beltT); d(IMG.body_line); d(face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win);
+      faces[face] = c;
+    }
+    return (spriteCache[key] = faces);
+  }
+  function drawSumo(g, faces, face, x, y, r, angle = 0, alpha = 1, sx = 1, sy = 1) {
+    const k = r / BODY_R;
+    g.save(); g.globalAlpha = alpha; g.translate(x, y); g.rotate(angle); g.scale(sx, sy);
+    g.drawImage(faces[face], -CX * k, -CY * k, 1024 * k, 1024 * k);
+    g.restore();
+  }
+  const EAST = { body: '#ffb3c6', belt: '#c2185b', ring: '#e0457b' }, WEST = { body: '#b3dcff', belt: '#1565c0', ring: '#3b82d6' };
+
+  // ---- 効果音（ブラウザの中で合成） ----
+  let actx = null;
+  function audio() {
+    if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { actx = null; } }
+    if (actx && actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+  let muted = false;
+  try { muted = localStorage.getItem('sumo-tachiai-mute') === '1'; } catch {}
+  function tone(freq, dur, type = 'sine', vol = 0.15, slide = 0, delay = 0) {
+    const a = audio(); if (!a || muted) return;
+    const o = a.createOscillator(), gn = a.createGain(), t0 = a.currentTime + delay;
+    o.type = type; o.frequency.setValueAtTime(freq, t0);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq * slide), t0 + dur);
+    gn.gain.setValueAtTime(vol, t0); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(gn).connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function noise(dur, vol = 0.08, freq = 1200) {
+    const a = audio(); if (!a || muted) return;
+    const len = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const s = a.createBufferSource(), f = a.createBiquadFilter(), gn = a.createGain();
+    f.type = 'bandpass'; f.frequency.value = freq; gn.gain.value = vol;
+    s.buffer = buf; s.connect(f).connect(gn).connect(a.destination); s.start();
+  }
+  const SFX = {
+    brush: () => noise(0.06, 0.05, 2400),
+    start: () => tone(520, 0.12, 'triangle', 0.12, 0.7),
+    bump: s => tone(160 + Math.random() * 40, 0.12, 'sine', Math.min(0.25, 0.05 + s * 0.02), 0.6),
+    boing: () => tone(300, 0.25, 'sine', 0.18, 2.2),
+    win: () => { tone(523, 0.15, 'triangle', 0.18); tone(659, 0.15, 'triangle', 0.18, 1, 0.12); tone(784, 0.3, 'triangle', 0.2, 1, 0.24); noise(0.25, 0.12, 300); },
+    star: k => tone(880 + k * 220, 0.18, 'triangle', 0.16),
+    fail: () => { tone(330, 0.2, 'sawtooth', 0.08, 0.6); tone(220, 0.35, 'sawtooth', 0.08, 0.6, 0.18); },
+    tap: () => tone(700, 0.05, 'triangle', 0.08),
+  };
+
+  // ---- 進み具合 ----
+  let progress = {};
+  try { progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {}; } catch {}
+  const totalStars = () => Object.values(progress).reduce((s, v) => s + v, 0);
+  const unlocked = i => i === 0 || progress[i - 1] > 0;
+  function saveProgress(i, stars) {
+    if ((progress[i] || 0) >= stars) return;
+    progress[i] = stars;
+    try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress)); localStorage.setItem(BEST_KEY, totalStars()); } catch {}
+  }
+
+  // ================= 状態 =================
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+  let scene = 'title', t = 0, page = 0;
+  let cur = 0, world = null, drawing = null, endT = 0, showHint = false, hintT = 0, stars = 0, resultT = 0, starShown = 0;
+  let particles = [], shake = 0, flash = 0, lastBrush = 0, prevPos = null;
+
+  function startLevel(i) {
+    cur = i; world = createWorld(LEVELS[i]); drawing = null; endT = 0; showHint = false; resultT = 0; stars = 0; starShown = 0;
+    particles = []; shake = 0; prevPos = null;
+    scene = 'play';
+  }
+
+  // ================= 入力 =================
+  let buttons = [];
+  function hitButton(x, y) { for (let i = buttons.length - 1; i >= 0; i--) { const b = buttons[i]; if (x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h) return b; } return null; }
+  function pos(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; }
+
+  cv.addEventListener('pointerdown', e => {
+    e.preventDefault(); audio();
+    const [x, y] = pos(e);
+    const b = hitButton(x, y);
+    if (b) { SFX.tap(); return b.fn(); }
+    if (scene === 'rules') { scene = 'title'; return; }
+    if (scene === 'play' && world.state === 'draw' && y > 74) {
+      cv.setPointerCapture(e.pointerId);
+      drawing = { runs: [], run: null, last: null };
+      addPoint(x, y);
+    }
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drawing) return;
+    e.preventDefault();
+    const [x, y] = pos(e);
+    // 指が速く動いても、間を細かく埋める
+    const L = drawing.last || drawing.lastRaw;
+    if (L) {
+      const d = Math.hypot(x - L[0], y - L[1]), n = Math.max(1, Math.floor(d / 5));
+      for (let k = 1; k <= n; k++) addPoint(L[0] + (x - L[0]) * k / n, L[1] + (y - L[1]) * k / n);
+    } else addPoint(x, y);
+  });
+  const endDraw = e => {
+    if (!drawing) return;
+    e && e.preventDefault();
+    const runs = drawing.runs.filter(r => r.length > 1);
+    drawing = null;
+    if (!runs.length) return;
+    addStroke(world, runs);
+    SFX.start();
+  };
+  cv.addEventListener('pointerup', endDraw);
+  cv.addEventListener('pointercancel', endDraw);
+
+  function addPoint(x, y) {
+    const d = drawing;
+    d.lastRaw = [x, y];
+    if (world.used >= world.ink) return;
+    if (!pointFree(world, x, y)) { d.run = null; d.last = null; return; }
+    if (d.last) {
+      const dist = Math.hypot(x - d.last[0], y - d.last[1]);
+      if (dist < 3) return;
+      if (world.used + dist > world.ink) { endDraw(); return; }
+      world.used += dist;
+      if (t - lastBrush > 0.07) { SFX.brush(); lastBrush = t; }
+    }
+    if (!d.run) { d.run = []; d.runs.push(d.run); }
+    d.run.push([x, y]); d.last = [x, y];
+  }
+
+  // ================= 更新 =================
+  let acc = 0;
+  function update(dt) {
+    t += dt;
+    toList.hidden = !(scene === 'title' || scene === 'select');
+    particles.forEach(p => { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.g ?? 600) * dt; p.r += (p.vr || 0) * dt; });
+    particles = particles.filter(p => p.t < p.life);
+    shake = Math.max(0, shake - dt); flash = Math.max(0, flash - dt);
+    if (scene !== 'play' && scene !== 'result') return;
+    if (world.state === 'run') {
+      acc += dt;
+      while (acc >= 1 / 60) {
+        acc -= 1 / 60;
+        if (world.result && scene === 'result') { stepWorld(world); continue; }
+        stepWorld(world);
+        for (const h of world.hits.splice(0)) { if (h.label === 'zabuton') SFX.boing(); else SFX.bump(h.s); }
+        if (world.result && scene === 'play') onResult();
+      }
+      if (scene === 'play' && !world.result) endT += dt;
+    }
+    if (scene === 'result') {
+      resultT += dt;
+      while (world.result === 'win' && starShown < stars && resultT >= 1.2 + starShown * 0.25) SFX.star(starShown++);
+    }
+  }
+
+  function onResult() {
+    const r = world.result;
+    scene = 'result'; resultT = 0;
+    if (r === 'win') {
+      stars = starsFor(world.used, world.ink);
+      saveProgress(cur, stars);
+      SFX.win(); shake = 0.25; flash = 0.3;
+      const mx = (world.a.position.x + world.b.position.x) / 2, my = (world.a.position.y + world.b.position.y) / 2;
+      for (let i = 0; i < 26; i++) {
+        const a = Math.random() * Math.PI * 2, s = 150 + Math.random() * 320;
+        particles.push({ kind: 'zabuton', x: mx, y: my, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 250, r: Math.random() * 6, vr: (Math.random() - 0.5) * 10, t: 0, life: 2.2, c: ['#c62828', '#7b1fa2', '#2e7d32', '#ef6c00'][i % 4], g: 500 });
+      }
+      for (let i = 0; i < 14; i++) {
+        const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 120;
+        particles.push({ kind: 'spark', x: mx, y: my, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, life: 0.6, g: 0, r: 0 });
+      }
+    } else { SFX.fail(); shake = 0.2; }
+  }
+
+  // ================= 描画 =================
+  function text(g, s, x, y, size, color = '#3a2a10', stroke = 'rgba(0,0,0,0)', align = 'center', weight = 'bold') {
+    g.font = `${weight} ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`; g.textAlign = align; g.textBaseline = 'middle';
+    if (stroke !== 'rgba(0,0,0,0)') { g.lineJoin = 'round'; g.lineWidth = size / 4; g.strokeStyle = stroke; g.strokeText(s, x, y); }
+    g.fillStyle = color; g.fillText(s, x, y);
+  }
+  function rrect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+  function button(g, x, y, w, h, fn, draw, color = '#fffaf0') {
+    rrect(g, x, y + 3, w, h, Math.min(16, h / 2)); g.fillStyle = 'rgba(58,42,16,.25)'; g.fill();
+    rrect(g, x, y, w, h, Math.min(16, h / 2)); g.fillStyle = color; g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#3a2a10'; g.stroke();
+    draw(x + w / 2, y + h / 2);
+    buttons.push({ x, y, w, h, fn });
+  }
+  function star(g, x, y, r, filled, color = '#ffc400') {
+    g.beginPath();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    g.closePath(); g.fillStyle = filled ? color : 'rgba(58,42,16,.15)'; g.fill();
+    g.lineWidth = r * 0.14; g.lineJoin = 'round'; g.strokeStyle = filled ? '#b26a00' : 'rgba(58,42,16,.25)'; g.stroke();
+  }
+
+  // 和紙の背景（一度だけ描いてとっておく）
+  let paper = null;
+  function paperBg() {
+    if (paper) return paper;
+    paper = document.createElement('canvas'); paper.width = W * 2; paper.height = H * 2;
+    const g = paper.getContext('2d'); g.scale(2, 2);
+    const grd = g.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, '#fbf6ea'); grd.addColorStop(1, '#f1e7cf');
+    g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 900; i++) {
+      g.strokeStyle = `rgba(160,130,80,${Math.random() * 0.06})`; g.lineWidth = 0.6;
+      const x = Math.random() * W, y = Math.random() * H, a = Math.random() * Math.PI, l = 3 + Math.random() * 10;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    }
+    return paper;
+  }
+
+  // 墨の線（太さに少しゆらぎをつけて筆っぽく）
+  function inkPath(g, pts, ox = 0, oy = 0, ang = 0, alpha = 1) {
+    if (pts.length < 2) return;
+    g.save(); g.translate(ox, oy); g.rotate(ang); g.globalAlpha = alpha;
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = '#1b1712'; g.lineWidth = LINE_W;
+    g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(pts[0][0] - 1, pts[0][1] - 2);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0] - 1, pts[i][1] - 2);
+    g.stroke();
+    g.restore();
+  }
+
+  function polyPath(g, verts) { g.beginPath(); g.moveTo(verts[0].x, verts[0].y); for (let i = 1; i < verts.length; i++) g.lineTo(verts[i].x, verts[i].y); g.closePath(); }
+
+  function drawObj(g, b) {
+    const o = b.def, x = b.position.x, y = b.position.y;
+    g.save(); g.translate(x, y); g.rotate(b.angle);
+    const w = o.w, h = o.h;
+    if (o.t === 'wall' || o.t === 'mover') {
+      rrect(g, -w / 2, -h / 2, w, h, Math.min(6, h / 2));
+      g.fillStyle = o.t === 'mover' ? '#8d6e63' : '#a07850'; g.fill();
+      g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(-w / 2 + 4, -h / 2 + 2, w - 8, 3);
+      g.strokeStyle = 'rgba(60,35,10,.35)'; g.lineWidth = 1;
+      for (let k = -w / 2 + 18; k < w / 2 - 6; k += 26) { g.beginPath(); g.moveTo(k, -h / 2 + 5); g.lineTo(k + 8, h / 2 - 3); g.stroke(); }
+      rrect(g, -w / 2, -h / 2, w, h, Math.min(6, h / 2)); g.lineWidth = 2; g.strokeStyle = '#5a3d1e'; g.stroke();
+      if (o.t === 'mover') { g.fillStyle = '#ffe082'; text(g, o.dx ? '⇔' : '⇕', 0, 1, Math.min(14, h), '#ffe082'); }
+    } else if (o.t === 'ice') {
+      rrect(g, -w / 2, -h / 2, w, h, Math.min(6, h / 2)); g.fillStyle = '#bfe6f7'; g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2;
+      for (let k = -w / 2 + 10; k < w / 2 - 10; k += 34) { g.beginPath(); g.moveTo(k, h / 2 - 3); g.lineTo(k + 10, -h / 2 + 3); g.stroke(); }
+      rrect(g, -w / 2, -h / 2, w, h, Math.min(6, h / 2)); g.lineWidth = 2; g.strokeStyle = '#5a93ad'; g.stroke();
+    } else if (o.t === 'zabuton') {
+      rrect(g, -w / 2, -h / 2, w, h, h / 2); g.fillStyle = '#7b1fa2'; g.fill();
+      g.lineWidth = 2; g.strokeStyle = '#4a0f63'; g.stroke();
+      g.fillStyle = '#ffd54f'; for (const k of [-w / 4, w / 4]) { g.beginPath(); g.arc(k, 0, 3, 0, Math.PI * 2); g.fill(); }
+    } else if (o.t === 'box') {
+      rrect(g, -w / 2, -h / 2, w, h, 8); g.fillStyle = '#e6c770'; g.fill();
+      g.strokeStyle = 'rgba(150,110,30,.5)'; g.lineWidth = 1;
+      for (let k = -h / 2 + 5; k < h / 2; k += 4) { g.beginPath(); g.moveTo(-w / 2 + 3, k); g.lineTo(w / 2 - 3, k); g.stroke(); }
+      g.fillStyle = '#7a4a1c'; g.fillRect(-w / 4 - 2, -h / 2, 4, h); g.fillRect(w / 4 - 2, -h / 2, 4, h);
+      rrect(g, -w / 2, -h / 2, w, h, 8); g.lineWidth = 2; g.strokeStyle = '#8a6420'; g.stroke();
+    } else if (o.t === 'hinge') {
+      rrect(g, -w / 2, -h / 2, w, h, 4); g.fillStyle = '#6d4c41'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#3e2723'; g.stroke();
+      g.beginPath(); g.arc(0, 0, 6, 0, Math.PI * 2); g.fillStyle = '#ffd54f'; g.fill(); g.stroke();
+    } else if (o.t === 'pot') {
+      // あつあつのちゃんこ鍋
+      g.fillStyle = '#3e2723'; rrect(g, -w / 2 - 6, -h / 2 + 6, w + 12, h - 6, 10); g.fill();
+      g.fillStyle = '#e65100'; rrect(g, -w / 2, -h / 2, w, 14, 6); g.fill();
+      g.fillStyle = '#ffb74d';
+      for (let k = 0; k < 5; k++) { const bx = -w / 2 + 10 + ((k * 37 + t * 40) % (w - 20)), by = -h / 2 + 6 + Math.sin(t * 6 + k) * 2; g.beginPath(); g.arc(bx, by, 3, 0, Math.PI * 2); g.fill(); }
+      g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 2;
+      for (let k = 0; k < 3; k++) { const sx = -w / 3 + k * w / 3, ph = (t * 1.2 + k * 0.4) % 1; g.globalAlpha = 1 - ph; g.beginPath(); g.moveTo(sx, -h / 2 - 4 - ph * 26); g.quadraticCurveTo(sx + 6, -h / 2 - 12 - ph * 26, sx, -h / 2 - 20 - ph * 26); g.stroke(); }
+      g.globalAlpha = 1;
+    } else if (o.t === 'peg') {
+      g.beginPath(); g.arc(0, 0, o.r, 0, Math.PI * 2); g.fillStyle = '#a07850'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#5a3d1e'; g.stroke();
+    }
+    g.restore();
+  }
+
+  function drawBall(g, b, side) {
+    const res = world.result;
+    let face = 'normal';
+    if (res === 'win') face = 'win';
+    else if (res) face = 'hit';
+    else if (world.state === 'run' && Math.hypot(b.velocity.x, b.velocity.y) > 7) face = 'hit';
+    const S = side === 'A' ? EAST : WEST;
+    // 待っている間は、ふわふわ浮いている
+    const bob = world.state === 'draw' ? Math.sin(t * 2.4 + (side === 'A' ? 0 : 1.5)) * 2 : 0;
+    const x = b.position.x, y = b.position.y + bob;
+    g.beginPath(); g.arc(x, y, BALL_R + 3, 0, Math.PI * 2); g.fillStyle = S.ring; g.globalAlpha = 0.18; g.fill(); g.globalAlpha = 1;
+    drawSumo(g, sprite(S.body, S.belt), face, x, y, BALL_R * 0.93, b.angle);
+  }
+
+  function drawHud(g) {
+    const L = LEVELS[cur];
+    g.fillStyle = 'rgba(251,246,234,.95)'; g.fillRect(0, 0, W, 70);
+    g.strokeStyle = 'rgba(58,42,16,.25)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, 70); g.lineTo(W, 70); g.stroke();
+    button(g, 10, 13, 44, 44, () => { scene = 'select'; page = Math.floor(cur / 20); }, (cx, cy) => {
+      g.fillStyle = '#3a2a10'; for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { rrect(g, cx + i * 8 - 3, cy + j * 8 - 3, 6, 6, 1.5); g.fill(); }
+    });
+    text(g, `${cur + 1}`, 64, 28, 22, '#3a2a10', 'rgba(0,0,0,0)', 'left');
+    // 墨の量（★の目安つき）
+    const bx = 112, bw = 172, by = 22, left = Math.max(0, 1 - world.used / world.ink);
+    text(g, L.name || '', bx, 51, 11, '#8a7350', 'rgba(0,0,0,0)', 'left');
+    rrect(g, bx, by, bw, 14, 7); g.fillStyle = 'rgba(58,42,16,.12)'; g.fill();
+    if (left > 0) { rrect(g, bx, by, Math.max(14, bw * left), 14, 7); g.fillStyle = '#1b1712'; g.fill(); }
+    // ★の目安: 墨が 60% 以上残れば★3、30% 以上で★2
+    for (const thr of [0.3, 0.6]) star(g, bx + bw * thr, by + 7, 8, left >= thr);
+    button(g, 296, 13, 56, 44, () => { showHint = !showHint; hintT = 0; }, (cx, cy) => { text(g, '💡', cx, cy - 4, 18); text(g, 'ヒント', cx, cy + 14, 9, '#6b5530'); }, showHint ? '#fff3b0' : '#fffaf0');
+    button(g, 360, 13, 50, 44, () => startLevel(cur), (cx, cy) => {
+      g.strokeStyle = '#3a2a10'; g.lineWidth = 3; g.lineCap = 'round';
+      g.beginPath(); g.arc(cx, cy, 11, -Math.PI * 0.2, Math.PI * 1.45); g.stroke();
+      g.fillStyle = '#3a2a10'; g.beginPath(); g.moveTo(cx + 12, cy - 13); g.lineTo(cx + 13, cy - 2); g.lineTo(cx + 3, cy - 6); g.closePath(); g.fill();
+    });
+  }
+
+  function drawPlay(g) {
+    g.drawImage(paperBg(), 0, 0, W, H);
+    g.save();
+    if (shake > 0) g.translate((Math.random() - 0.5) * 8 * shake / 0.25, (Math.random() - 0.5) * 8 * shake / 0.25);
+    const L = LEVELS[cur];
+    // ヒントの点線
+    if (showHint && L.hint) {
+      g.save(); g.setLineDash([2, 10]); g.lineCap = 'round'; g.strokeStyle = 'rgba(230,81,0,.75)'; g.lineWidth = 6;
+      const n = L.hint.length;
+      g.beginPath(); g.moveTo(L.hint[0][0], L.hint[0][1]); for (let i = 1; i < n; i++) g.lineTo(L.hint[i][0], L.hint[i][1]); g.stroke();
+      g.restore();
+    }
+    for (const b of world.objs) drawObj(g, b);
+    for (const s of world.strokes) for (const run of s.runs) inkPath(g, run, s.position.x, s.position.y, s.angle);
+    if (drawing) for (const run of drawing.runs) inkPath(g, run);
+    drawBall(g, world.a, 'A'); drawBall(g, world.b, 'B');
+    for (const p of particles) {
+      const a = 1 - p.t / p.life;
+      if (p.kind === 'zabuton') {
+        g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.globalAlpha = Math.min(1, a * 2);
+        rrect(g, -9, -7, 18, 14, 4); g.fillStyle = p.c; g.fill(); g.restore();
+      } else if (p.kind === 'spark') {
+        g.save(); g.globalAlpha = a; star(g, p.x, p.y, 7, true, '#fff59d'); g.restore();
+      }
+    }
+    g.restore();
+    // 初めのステージの説明
+    if (cur === 0 && world.state === 'draw' && !drawing) {
+      const [[x0, y0], [x1, y1]] = L.hint, k = Math.min(1, (t % 2.4) / 1.8), hx = x0 + (x1 - x0) * k, hy = y0 + (y1 - y0) * k;
+      text(g, '指で線を描こう！', W / 2, 160, 22, '#3a2a10', '#fbf6ea');
+      text(g, '東（赤）と西（青）をぶつけたら勝ち', W / 2, 192, 14, '#6b5530', '#fbf6ea');
+      g.save(); g.globalAlpha = 0.85; g.setLineDash([3, 8]); g.strokeStyle = '#e65100'; g.lineWidth = 4; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(hx, hy); g.stroke(); g.restore();
+      text(g, '👆', hx + 10, hy + 18, 30);
+    }
+    if (flash > 0) { g.fillStyle = `rgba(255,255,255,${flash})`; g.fillRect(0, 0, W, H); }
+    drawHud(g);
+    // 動かないまま時間がたったら、やり直しをすすめる
+    if (scene === 'play' && world.state === 'run' && endT > 7) {
+      const a = Math.min(1, (endT - 7) * 2);
+      g.save(); g.globalAlpha = a;
+      button(g, W / 2 - 90, H - 86, 180, 52, () => startLevel(cur), (cx, cy) => text(g, 'もう一回', cx, cy, 19), '#ffe08a');
+      g.restore();
+    }
+  }
+
+  function drawResult(g) {
+    drawPlay(g);
+    const r = world.result, k = Math.min(1, Math.max(0, resultT - (r === 'win' ? 0.9 : 0.6)) * 3);
+    if (k <= 0) {
+      if (r === 'win') {
+        const s = Math.min(1, resultT * 4), a = Math.min(1, (0.9 - resultT) * 5 + 0.3);
+        g.save(); g.globalAlpha = Math.max(0, a); g.translate(W / 2, 300); g.scale(0.6 + s * 0.6, 0.6 + s * 0.6);
+        text(g, 'はっけよい！', 0, 0, 40, '#c62828', '#fff8e1'); g.restore();
+      }
+      return;
+    }
+    g.fillStyle = `rgba(30,20,8,${0.45 * k})`; g.fillRect(0, 0, W, H);
+    g.save(); g.globalAlpha = k; g.translate(0, (1 - k) * 40);
+    rrect(g, 40, 170, W - 80, 340, 22); g.fillStyle = '#fffaf0'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#3a2a10'; g.stroke();
+    if (r === 'win') {
+      text(g, '勝負あり！', W / 2, 212, 30, '#c62828');
+      for (let i = 0; i < 3; i++) {
+        const appear = Math.min(1, Math.max(0, (resultT - 1.2 - i * 0.25) * 5)), sz = 30 * (appear < 1 ? 0.5 + appear * 0.8 : 1);
+        star(g, W / 2 + (i - 1) * 72, 280 - (i === 1 ? 12 : 0), sz, i < stars && appear > 0);
+      }
+      text(g, `墨を ${Math.round(world.used / world.ink * 100)}% 使った`, W / 2, 338, 14, '#6b5530');
+    } else {
+      text(g, r === 'pot' ? 'あちちっ！' : '土俵の外へ…', W / 2, 230, 30, '#3b5bb5');
+      text(g, r === 'pot' ? 'ちゃんこ鍋に落ちてしまった' : '落ちてしまった', W / 2, 280, 15, '#6b5530');
+      drawSumo(g, sprite(EAST.body, EAST.belt), 'hit', W / 2, 330, 26);
+    }
+    g.restore();
+    if (k >= 1) {
+      if (r === 'win') {
+        const hasNext = cur + 1 < LEVELS.length;
+        button(g, 70, 370, W - 140, 56, () => hasNext ? startLevel(cur + 1) : (scene = 'select'), (cx, cy) => text(g, hasNext ? '次の取組へ ▶' : 'ステージ選択へ', cx, cy, 20), '#9dffb0');
+        button(g, 70, 440, 130, 46, () => startLevel(cur), (cx, cy) => text(g, 'もう一回', cx, cy, 16));
+        button(g, 220, 440, 130, 46, () => { scene = 'select'; page = Math.floor(cur / 20); }, (cx, cy) => text(g, 'ステージ', cx, cy, 16));
+      } else {
+        button(g, 70, 380, W - 140, 56, () => startLevel(cur), (cx, cy) => text(g, 'もう一回', cx, cy, 20), '#ffe08a');
+        button(g, 70, 446, W - 140, 46, () => { startLevel(cur); showHint = true; }, (cx, cy) => text(g, '💡 ヒントを見て もう一回', cx, cy, 15));
+      }
+    }
+  }
+
+  function drawSelect(g) {
+    g.drawImage(paperBg(), 0, 0, W, H);
+    text(g, '取組をえらぶ', W / 2, 46, 24, '#3a2a10');
+    text(g, `★ ${totalStars()} / ${LEVELS.length * 3}`, W / 2, 78, 15, '#b26a00');
+    const per = 20, pages = Math.ceil(LEVELS.length / per);
+    for (let k = 0; k < per; k++) {
+      const i = page * per + k; if (i >= LEVELS.length) break;
+      const col = k % 4, row = Math.floor(k / 4), x = 36 + col * 90, y = 104 + row * 98;
+      const open = unlocked(i), st = progress[i] || 0;
+      button(g, x, y, 78, 84, () => { if (open) startLevel(i); }, (cx, cy) => {
+        if (!open) { text(g, '🔒', cx, cy - 6, 22); return; }
+        text(g, String(i + 1), cx, cy - 12, 26, '#3a2a10');
+        for (let s = 0; s < 3; s++) star(g, cx + (s - 1) * 20, cy + 22, 8, s < st);
+      }, open ? (st ? '#fffaf0' : '#fff3c4') : '#e4dccb');
+    }
+    if (pages > 1) {
+      if (page > 0) button(g, 30, 604, 90, 44, () => { page--; }, (cx, cy) => text(g, '◀ 前', cx, cy, 16));
+      if (page < pages - 1) button(g, W - 120, 604, 90, 44, () => { page++; }, (cx, cy) => text(g, '次 ▶', cx, cy, 16));
+      text(g, `${page + 1} / ${pages}`, W / 2, 626, 14, '#6b5530');
+    }
+    button(g, W - 64, 22, 48, 44, () => { scene = 'title'; }, (cx, cy) => text(g, '✕', cx, cy, 20));
+  }
+
+  function drawTitle(g) {
+    g.drawImage(paperBg(), 0, 0, W, H);
+    text(g, 'はなりきし', W / 2, 96, 28, '#6b5530');
+    text(g, '立ち合い', W / 2, 152, 58, '#1b1712', '#fbf6ea');
+    // 線の上で向かい合う2人
+    const k = (Math.sin(t * 1.6) + 1) / 2;
+    inkPath(g, [[70, 330], [140, 352], [210, 360], [280, 352], [350, 330]]);
+    drawSumo(g, sprite(EAST.body, EAST.belt), k > 0.93 ? 'win' : 'normal', 150 + k * 20, 318 - k * 6, 30, k * 0.6);
+    drawSumo(g, sprite(WEST.body, WEST.belt), k > 0.93 ? 'win' : 'normal', 270 - k * 20, 318 - k * 6, 30, -k * 0.6);
+    text(g, '墨で線を描いて、東と西を立ち合わせよう', W / 2, 410, 15, '#6b5530');
+    button(g, 80, 450, W - 160, 64, () => { const first = LEVELS.findIndex((L, i) => unlocked(i) && !progress[i]); page = Math.floor(Math.max(0, first) / 20); scene = 'select'; }, (cx, cy) => text(g, 'はじめる', cx, cy, 24), '#9dffb0');
+    button(g, 80, 530, (W - 172) / 2, 48, () => { scene = 'rules'; }, (cx, cy) => text(g, 'あそびかた', cx, cy, 16));
+    button(g, 92 + (W - 172) / 2, 530, (W - 172) / 2, 48, () => { muted = !muted; try { localStorage.setItem('sumo-tachiai-mute', muted ? '1' : '0'); } catch {} }, (cx, cy) => text(g, muted ? '🔇 音なし' : '🔊 音あり', cx, cy, 15));
+    text(g, `★ ${totalStars()} / ${LEVELS.length * 3}`, W / 2, 610, 16, '#b26a00');
+  }
+
+  function drawRules(g) {
+    g.drawImage(paperBg(), 0, 0, W, H);
+    text(g, 'あそびかた', W / 2, 50, 26, '#3a2a10');
+    const L = [
+      '指で1本、墨の線を描こう。',
+      '指をはなすと、線も力士も動き出す。',
+      '東（赤）と西（青）がぶつかったら勝ち！',
+      '',
+      '線は重さがあって、落ちたり転がったりする。',
+      '板や力士の上には描けない。',
+      '',
+      '墨が多く残るほど★が増える（最大★3）。',
+      'ちゃんこ鍋に落ちたり、画面の外へ',
+      '落ちたりしたら失敗。',
+      '',
+      'わからないときは 💡ヒント。',
+    ];
+    L.forEach((s, i) => text(g, s, W / 2, 110 + i * 32, 15, '#3a2a10', 'rgba(0,0,0,0)', 'center', s ? 'bold' : 'normal'));
+    text(g, 'タップでもどる', W / 2, 640, 18, '#2e7d32');
+  }
+
+  function draw() {
+    const g = ctx;
+    buttons = [];
+    if (scene === 'title') drawTitle(g);
+    else if (scene === 'select') drawSelect(g);
+    else if (scene === 'rules') drawRules(g);
+    else if (scene === 'play') drawPlay(g);
+    else if (scene === 'result') drawResult(g);
+  }
+
+  let last = 0;
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
+    update(dt); draw(); requestAnimationFrame(frame);
+  }
+  if (location.hash === '#debug') window.DBG = { LEVELS, startLevel: i => startLevel(i), get world() { return world; }, scene: () => scene, strokeFromPath, addStroke };   // テスト用
+  loadImages().then(() => { requestAnimationFrame(frame); })
+    .catch(err => { document.body.textContent = err.message; });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>

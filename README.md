@@ -21,6 +21,7 @@
 ├─ stack/                はなりきしスタック
 ├─ survivors/            はなりきしサバイバーズ
 ├─ shogi/                はなりきし将棋
+├─ tachiai/              はなりきし 立ち合い（ステージは levels.js）
 └─ _chanko/              はなりきし ちゃんこダンジョン（非公開。公開するときは chanko/ に戻し、
                           thumb.jpg を thumbs/chanko.jpg へ移して games.json に足す）
 ```
