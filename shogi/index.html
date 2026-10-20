@@ -659,8 +659,7 @@
     const bob = Math.sin(t * 3) * 4;
     drawSumo(g, sprite('#cfd8dc', '#14507a'), 'normal', W / 2 - 62, 268 + bob, 36);
     text(g, '？', W / 2 - 62, 220 + bob, 22, '#2350b0');
-    const rk = RANKS[Math.min(rankOfStreak(streak), RANKS.length - 2)];
-    drawSumo(g, sprite(rk.body, rk.belt), 'normal', W / 2 + 62, 268 - bob, 30);
+    drawSumo(g, sprite(RANKS[0].body, RANKS[0].belt), 'normal', W / 2 + 62, 268 - bob, 30);
     drawDots(g, K, W / 2 + 62, 268 - bob);
     LEVELS.forEach((L, d) => {
       const rr = RANKS[rankOfStreak(streaks[d])];
