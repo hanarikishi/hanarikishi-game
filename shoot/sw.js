@@ -1,5 +1,5 @@
 // オフラインでも遊べるようにキャッシュする。更新したら VERSION を上げる。
-const VERSION = 'shoot-v2';
+const VERSION = 'shoot-v5';
 const FILES = [
   './', './index.html', './manifest.webmanifest', './core.js', './stages.js',
   '../parts/body_color.png', '../parts/mawashi.png', '../parts/body_line.png',

@@ -20,49 +20,66 @@ function solveRatio(st) {
   return ok / n;
 }
 
+// 障害物をなくしたときの割合（障害物が本当に効いているかを調べる）
+function bareRatio(st) { return solveRatio({ ...st, walls: [], pegs: [] }); }
+
+// 障害物は「入る打ち方の軌道の上」に置く（地面から生えた壁は、山なりに飛ばせば越えられるので使わない）
+function pathOf(st, vx, vy) {
+  const h = S.ballHome(st), b = { x: h.x, y: h.y, vx, vy }, pts = [];
+  for (let i = 0; i < 5 / C.DT; i++) {
+    const py = b.y, hp = S.step(b, st, i * C.DT, () => {});
+    if (i % 6 === 0) pts.push([b.x, b.y]);
+    if (S.through(py, b, hp)) return pts;
+    if (b.x < -40 || b.y > C.FLOOR) break;
+  }
+  return null;
+}
+function addBlocker(st, r, kind) {
+  const sols = [];
+  for (let a = 12; a <= 80; a += 4) for (let sp = 400; sp <= C.MAX_SPEED; sp += 40) {
+    const rad = a * Math.PI / 180;
+    if (S.simulate(st, Math.cos(rad) * sp, -Math.sin(rad) * sp).scored) sols.push([Math.cos(rad) * sp, -Math.sin(rad) * sp]);
+  }
+  if (!sols.length) return false;
+  const [vx, vy] = sols[Math.floor(r() * sols.length)], pts = pathOf(st, vx, vy);
+  if (!pts || pts.length < 12) return false;
+  const k = Math.floor(pts.length * (0.3 + r() * 0.35)), [px, py] = pts[k], hp = S.hoopAt(st, 0);
+  if (py < 50 || py > C.FLOOR - 70 || Math.hypot(px - hp.x, py - hp.y) < 100 || Math.abs(px - S.ballHome(st).x) < 90) return false;
+  if (kind === 'peg') {
+    const ang = r() * Math.PI, d = R(r, 22, 30);
+    for (let j = -1; j <= 1; j++) st.pegs.push([Math.round(px + Math.cos(ang) * d * j), Math.round(py + Math.sin(ang) * d * j), R(r, 9, 12)]);
+  } else {
+    const len = R(r, 70, 130) / 2, ang = (R(r, -35, 35)) * Math.PI / 180;
+    st.walls.push([Math.round(px - Math.cos(ang) * len), Math.round(py - Math.sin(ang) * len), Math.round(px + Math.cos(ang) * len), Math.round(py + Math.sin(ang) * len), kind === 'mat' ? 'z' : 'w']);
+  }
+  return true;
+}
+const base = (r, i) => ({ shooter: R(r, 50, 150), hoop: { x: R(r, 480, 640), y: R(r, 150, 280), board: 'R' } });
+
 const CHAPTERS = [
-  { name: 'はじめての土俵', make: (r, i) => ({ shooter: R(r, 50, 120 + i * 6), hoop: { x: R(r, 470, 520) + i * 12, y: R(r, 130, 280), board: 'R' } }) },
-  { name: '天井に注意', make: (r, i) => {
-    const hx = R(r, 480, 640), hy = R(r, 200, 300), cy = R(r, 60, 130 - i * 2);
-    return { shooter: R(r, 50, 150), hoop: { x: hx, y: hy, board: 'R' }, walls: [[R(r, 160, 260), cy, R(r, 420, hx - 60), cy, 'w']] };
-  } },
-  { name: '壁ごし', make: (r, i) => {
-    const hx = R(r, 500, 640), wx = R(r, 280, 430), top = R(r, 230 - i * 8, 300);
-    return { shooter: R(r, 50, 160), hoop: { x: hx, y: R(r, 150, 260), board: 'R' }, walls: [[wx, C.FLOOR, wx, top, 'w']] };
-  } },
-  { name: 'バンクショット', make: (r, i) => {
+  { name: 'はじめてのコート', obs: [], make: (r, i) => ({ shooter: R(r, 50, 120 + i * 6), hoop: { x: R(r, 470, 520) + i * 12, y: R(r, 130, 280), board: 'R' } }) },
+  { name: '空中の板', obs: ['plank'], make: base },
+  { name: 'ふたつの板', obs: ['plank', 'plank'], make: base },
+  { name: 'バンクショット', obs: [], make: (r, i) => {
     const hx = R(r, 560, 640), hy = R(r, 170, 280);
     return { shooter: R(r, 50, 180), hoop: { x: hx, y: hy, board: 'R' }, walls: [[hx - R(r, 90, 130), hy - R(r, 40, 80), hx - 20, hy - R(r, 55, 70), 'w']] };
   } },
-  { name: '杭の森', make: (r, i) => {
-    const hx = R(r, 500, 640), hy = R(r, 140, 270), pegs = [];
-    for (let k = 0; k < 4 + Math.floor(i / 2); k++) {
-      const x = R(r, 200, 560), y = R(r, 70, 330);
-      if (Math.hypot(x - hx, y - hy) < 70) continue;
-      pegs.push([x, y, R(r, 7, 12)]);
-    }
-    return { shooter: R(r, 50, 150), hoop: { x: hx, y: hy, board: 'R' }, pegs };
-  } },
-  { name: '動くゴール', make: (r, i) => {
+  { name: '杭の森', obs: ['peg', 'peg'], make: base },
+  { name: '動くゴール', obs: [], make: (r, i) => {
     const vert = r() < 0.6;
     return { shooter: R(r, 50, 160), hoop: { x: R(r, 500, 620), y: R(r, 170, 250), board: 'R', dx: vert ? 0 : R(r, 30, 50 + i * 3), dy: vert ? R(r, 30, 50 + i * 4) : 0, period: R(r, 22, 40) / 10 } };
   } },
-  { name: 'はねる座布団', make: (r, i) => {
-    const hx = R(r, 520, 640), hy = R(r, 140, 230), px = R(r, 260, 420);
-    return { shooter: R(r, 50, 150), hoop: { x: hx, y: hy, board: 'R' },
-      walls: [[px - 60, C.FLOOR - 6, px + 60, C.FLOOR - 6, 'z'], [R(r, 200, 260), R(r, 40, 110), R(r, 430, 480), R(r, 40, 110), 'w']] };
-  } },
-  { name: '総まとめ', make: (r, i) => {
-    const st = { shooter: R(r, 50, 150), hoop: { x: R(r, 500, 630), y: R(r, 150, 260), board: 'R' }, walls: [], pegs: [] };
-    const feats = ['ceil', 'wall', 'pegs', 'move', 'zab'].sort(() => r() - 0.5).slice(0, 2);
-    if (feats.includes('ceil')) st.walls.push([R(r, 180, 260), R(r, 60, 110), R(r, 400, 460), R(r, 60, 110), 'w']);
-    if (feats.includes('wall')) { const wx = R(r, 300, 430); st.walls.push([wx, C.FLOOR, wx, R(r, 230, 300), 'w']); }
-    if (feats.includes('pegs')) for (let k = 0; k < 4; k++) { const x = R(r, 220, 540), y = R(r, 80, 320); if (Math.hypot(x - st.hoop.x, y - st.hoop.y) > 70) st.pegs.push([x, y, 9]); }
-    if (feats.includes('move')) { st.hoop.dy = R(r, 30, 60); st.hoop.period = R(r, 25, 40) / 10; }
-    if (feats.includes('zab')) { const px = R(r, 260, 420); st.walls.push([px - 60, C.FLOOR - 6, px + 60, C.FLOOR - 6, 'z']); }
+  { name: 'はねるマット', obs: ['mat', 'plank'], make: base },
+  { name: '総まとめ', obs: ['plank', 'peg', 'mat'], pick: 2, make: (r, i) => {
+    const st = base(r, i);
+    if (r() < 0.5) { st.hoop.dy = R(r, 30, 60); st.hoop.period = R(r, 25, 40) / 10; }
     return st;
   } },
 ];
+
+// 章ごとの輪の大きさ（半幅）と、入る打ち方の割合の範囲。章が進むほど輪が小さく、入る打ち方が少なくなる
+const RIMS = [40, 37, 34, 31, 29, 27, 25, 23];
+const HI = [0.20, 0.13, 0.09, 0.065, 0.045, 0.045, 0.04, 0.03];
 
 const out = [];
 let seed = 7;
@@ -70,13 +87,21 @@ CHAPTERS.forEach((ch, ci) => {
   const got = [];
   for (let i = 0; got.length < 10; i++) {
     const r = rng(seed++);
+    if (i > 6000) throw new Error('作れない: ' + ch.name);
     const st = ch.make(r, got.length);
+    st.hoop.rim = RIMS[ci];
     st.walls = st.walls || []; st.pegs = st.pegs || [];
+    let kinds = ch.obs.slice();
+    if (ch.pick) kinds = kinds.sort(() => r() - 0.5).slice(0, ch.pick);
+    if (!kinds.every(k => addBlocker(st, r, k))) continue;
     const ratio = solveRatio(st);
-    // 入る打ち方がある（0.4%以上）・簡単すぎない（章が進むほど厳しく）
-    const hi = 0.12 - ci * 0.01;
-    if (ratio >= 0.004 && ratio <= hi) { st.ratio = +ratio.toFixed(4); got.push(st); process.stdout.write(`${ch.name} ${got.length}/10 (${(ratio * 100).toFixed(1)}%)\n`); }
-    if (i > 400) throw new Error('作れない: ' + ch.name);
+    // 章ごとの範囲に収まるものだけを使う（前の章よりはっきり難しくなる）
+    const hi = HI[ci], lo = Math.max(0.003, hi * 0.3);
+    if (i % 200 === 199) process.stdout.write(`  ..${ch.name} ${i + 1}回試して ${got.length}面\n`);
+    // 障害物があるなら、あるとないとで入りやすさが3割以上変わるものだけ（飾りの障害物は使わない）
+    const hasObs = st.walls.length + st.pegs.length > 0;
+    if (ratio >= lo && ratio <= hi && hasObs) { const bare = bareRatio(st); if (Math.abs(bare - ratio) < 0.25 * Math.max(bare, ratio)) continue; st.bare = +bare.toFixed(4); }
+    if (ratio >= lo && ratio <= hi) { st.ratio = +ratio.toFixed(4); got.push(st); process.stdout.write(`${ch.name} ${got.length}/10 (${(ratio * 100).toFixed(1)}%)\n`); }
   }
   // 章の中はやさしい順
   got.sort((a, b) => b.ratio - a.ratio);

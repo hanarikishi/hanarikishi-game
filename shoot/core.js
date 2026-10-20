@@ -1,5 +1,5 @@
 // はなりきしシュートの物理（ゲーム本体と、ステージを作る道具の両方から使う）
-// ステージ: { shooter: x, hoop: { x, y, board: 'R' | 'L' | null, dx, dy, period }, walls: [[x1, y1, x2, y2, 種類]], pegs: [[x, y, r]] }
+// ステージ: { shooter: x, hoop: { x, y, board: 'R' | 'L' | null, dx, dy, period, rim（輪の半幅。省くと27） }, walls: [[x1, y1, x2, y2, 種類]], pegs: [[x, y, r]] }
 //   walls の種類: 'w' 板（ふつうに跳ね返る）  'z' 座布団（よく跳ねる）
 (function (root) {
   'use strict';
@@ -7,11 +7,11 @@
 
   function hoopAt(st, t) {
     const h = st.hoop, k = h.period ? Math.sin(t * 2 * Math.PI / h.period) : 0;
-    return { x: h.x + (h.dx || 0) * k, y: h.y + (h.dy || 0) * k };
+    return { x: h.x + (h.dx || 0) * k, y: h.y + (h.dy || 0) * k, rim: h.rim || C.RIM_HALF };
   }
   function boardSeg(st, hp) {
     if (st.hoop.board === null) return null;
-    const bx = st.hoop.board === 'L' ? hp.x - C.RIM_HALF - 8 : hp.x + C.RIM_HALF + 8;
+    const bx = st.hoop.board === 'L' ? hp.x - hp.rim - 8 : hp.x + hp.rim + 8;
     return [bx, hp.y - 95, bx, hp.y + 12, 'b'];
   }
   const ballHome = st => ({ x: st.shooter + 12, y: C.FLOOR - 64 });
@@ -41,13 +41,13 @@
     for (const [px, py, r] of st.pegs || []) hitPoint(b, px, py, r, 0.6, 'peg', onHit);
     const hp = hoopAt(st, t), bs = boardSeg(st, hp);
     if (bs) hitSeg(b, bs, onHit);
-    hitPoint(b, hp.x - C.RIM_HALF, hp.y, 3, 0.6, 'rim', onHit);
-    hitPoint(b, hp.x + C.RIM_HALF, hp.y, 3, 0.6, 'rim', onHit);
+    hitPoint(b, hp.x - hp.rim, hp.y, 3, 0.6, 'rim', onHit);
+    hitPoint(b, hp.x + hp.rim, hp.y, 3, 0.6, 'rim', onHit);
     return hp;
   }
   // 輪を上から下へ通ったか
   function through(prevY, b, hp) {
-    return prevY < hp.y && b.y >= hp.y && b.vy > 0 && b.x > hp.x - C.RIM_HALF + 3 && b.x < hp.x + C.RIM_HALF - 3;
+    return prevY < hp.y && b.y >= hp.y && b.vy > 0 && b.x > hp.x - hp.rim + 3 && b.x < hp.x + hp.rim - 3;
   }
 
   // 打った球が入るかを最後まで計算する
