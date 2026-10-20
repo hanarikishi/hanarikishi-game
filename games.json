@@ -1,5 +1,15 @@
 [
   {
+    "id": "chanko",
+    "title": "はなりきし ちゃんこダンジョン",
+    "desc": "どこまでも深く潜るローグライクRPG。押し出しで池に落とせ",
+    "path": "chanko/",
+    "thumb": "thumbs/chanko.jpg",
+    "tags": ["RPG"],
+    "added": "2026-10-20",
+    "best": { "key": "sumo-chanko-best", "type": "number", "unit": "階" }
+  },
+  {
     "id": "shogi",
     "title": "はなりきし将棋",
     "desc": "5×8の将棋。相手の駒は何か分からない",
