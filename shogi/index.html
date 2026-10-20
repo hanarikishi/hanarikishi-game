@@ -654,13 +654,9 @@
     g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
     text(g, 'はなりきし', W / 2, 92, 30, '#6b5530');
     text(g, '将棋', W / 2, 148, 60, '#b71c1c', '#fff8dc');
-    // 盤の上で向かい合う2人（相手は何の駒か分からない）
-    rrect(g, W / 2 - 150, 205, 300, 120, 14); g.fillStyle = '#ecd3a0'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#8a6630'; g.stroke();
+    // ふつうのはなりきし
     const bob = Math.sin(t * 3) * 4;
-    drawSumo(g, sprite('#cfd8dc', '#14507a'), 'normal', W / 2 - 62, 268 + bob, 36);
-    text(g, '？', W / 2 - 62, 220 + bob, 22, '#2350b0');
-    drawSumo(g, sprite(RANKS[0].body, RANKS[0].belt), 'normal', W / 2 + 62, 268 - bob, 30);
-    drawDots(g, K, W / 2 + 62, 268 - bob);
+    g.drawImage(IMG.home, W / 2 - 70, 190 + bob, 140, 140);
     LEVELS.forEach((L, d) => {
       const rr = RANKS[rankOfStreak(streaks[d])];
       button(g, L.name, `${rr.name}・${streaks[d]}連勝 ／ 最高 ${bests[d]}連勝`, 60, 350 + d * 72, W - 120, 60, L.color, () => chooseDiff(d));
