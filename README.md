@@ -22,6 +22,7 @@
 ├─ stack/                はなりきしスタック
 ├─ survivors/            はなりきしサバイバーズ
 ├─ shogi/                はなりきし将棋
+├─ breakout/             はなりきしブロック崩し
 ├─ shoot/                はなりきしシュート（横画面。ステージは _docs/tools/gen_shoot_stages.js で作る）
 ├─ _tachiai/             はなりきし 立ち合い（非公開。公開するときは tachiai/ に戻し、
 │                         thumb.jpg を thumbs/tachiai.jpg へ移して games.json に足す）

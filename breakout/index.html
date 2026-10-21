@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>はなりきしブロック崩し</title>
+<link rel="icon" href="../parts/icon-192.png">
+<link rel="apple-touch-icon" href="../parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f6e7b8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #e9d79c; display: flex; justify-content: center; align-items: center;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  canvas {
+    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    box-shadow: 0 0 30px rgba(60, 40, 0, .3); touch-action: none; cursor: pointer;
+  }
+  /* ゲーム一覧へ戻るボタン（遊んでいないときだけ、画面の左下に出す） */
+  #toList {
+    position: fixed; z-index: 5; text-decoration: none;
+    left: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px);
+    bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 10px);
+    padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10;
+    background: rgba(255, 248, 220, .94); color: #3a2a10; font-weight: bold; font-size: 14px;
+  }
+  #toList[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="840" height="1400"></canvas>
+<a id="toList" href="../">◀ ゲーム一覧</a>
+
+<script>
+(() => {
+  'use strict';
+  const toList = document.getElementById('toList');
+  const W = 420, H = 700;
+  const BEST_KEY = 'sumo-breakout-best';
+
+  // 番付（全ゲーム共通）。from は番付が上がる得点
+  const RANKS = [
+    { name: '前相撲', from: 0,   body: '#f1efe8', belt: '#111111' },
+    { name: '序の口', from: 3,   body: '#f7e3bd', belt: '#111111' },
+    { name: '序二段', from: 7,   body: '#bfe4f6', belt: '#111111' },
+    { name: '三段目', from: 12,  body: '#c9eaa5', belt: '#111111' },
+    { name: '幕下',   from: 18,  body: '#f8cfe0', belt: '#111111' },
+    { name: '十両',   from: 26,  body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 36,  body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 48,  body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 62,  body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 78,  body: '#ff9a3c', belt: '#14507a' },
+    { name: '横綱',   from: 100, body: '#ffee00', belt: '#1f5c00' },
+  ];
+  const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
+
+  // ---- 画像（はなりきしの絵は ../parts/ に共通で置いてある） ----
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
+  const IMG = {};
+  const CX = 513, CY = 538, BODY_R = 395;         // 絵の中の体の中心と半径
+  const loadImages = () => Promise.all(SRC.map(n => new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => { IMG[n] = i; res(); }; i.onerror = () => rej(new Error('画像を読み込めません: ' + n)); i.src = `../parts/${n}.png`;
+  })));
+  const tint = (img, color) => {
+    const c = document.createElement('canvas'); c.width = c.height = 1024;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, 1024, 1024); return c;
+  };
+  // ランクごとの色のはなりきし（face: normal / hit / win）を作る
+  const SR = 24, DPR = 2, sprites = [];
+  function buildSprites() {
+    const size = Math.ceil(1024 * SR / BODY_R * DPR);
+    RANKS.forEach(rk => {
+      const bodyT = tint(IMG.body_color, rk.body), beltT = tint(IMG.mawashi, rk.belt), faces = {};
+      for (const face of ['normal', 'hit', 'win']) {
+        const c = document.createElement('canvas'); c.width = c.height = size;
+        const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+        const d = im => g.drawImage(im, 0, 0, size, size);
+        d(bodyT); d(beltT); d(IMG.body_line); d(face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win);
+        faces[face] = c;
+      }
+      sprites.push(faces);
+    });
+  }
+  // 体の中心を (x, y) に置き、半径 r で描く
+  function drawSumo(g, lv, face, x, y, r, rot = 0) {
+    const cv = sprites[lv][face], k = r / BODY_R;
+    g.save(); g.translate(x, y); g.rotate(rot);
+    g.drawImage(cv, -CX * k, -CY * k, 1024 * k, 1024 * k);
+    g.restore();
+  }
+  // 顔だけを (x, y) に置いて描く（ブロック用）
+  function drawFace(g, face, x, y, size) {
+    const im = face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win, k = size / 1024;
+    g.drawImage(im, x - CX * k, y - CY * k, size, size);
+  }
+  const rrect = (g, x, y, w, h, r) => {
+    g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  };
+
+  // ---- 設定 ----
+  const COLS = 7, BW = 54, BH = 34, GAP = 4, TOP = 84;
+  const BX0 = (W - (COLS * BW + (COLS - 1) * GAP)) / 2;
+  const PAD_Y = 636, PAD_H = 20, BALL_R = 12;
+  const rowRank = [9, 7, 5, 3, 2, 1, 4, 6];            // 段ごとのブロックの色（番付の色）
+
+  // ---- 状態 ----
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+  let state, score, best, t = 0, level, lives, bricks, ball, pad, parts, shake, hitT, msg;
+  try { best = +localStorage.getItem(BEST_KEY) || 0; } catch { best = 0; }
+
+  const speedOf = () => Math.min(250 + level * 25, 480);
+  function buildLevel() {
+    const rows = Math.min(4 + level, 8);
+    bricks = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < COLS; c++) {
+      // 2面目からは、ところどころ穴をあける
+      if (level >= 2 && (r + c * 3 + level) % 7 === 0) continue;
+      const hp = r < Math.min(1 + Math.floor(level / 2), 3) ? 2 : 1;
+      bricks.push({ x: BX0 + c * (BW + GAP), y: TOP + r * (BH + GAP), rank: rowRank[r], hp, hp0: hp, flash: 0 });
+    }
+  }
+  function ready() {
+    state = 'ready';
+    pad.w = level >= 4 ? 76 : 92;
+    ball = { x: pad.x, y: PAD_Y - BALL_R, vx: 0, vy: 0, rot: 0 };
+  }
+  function reset() {
+    score = 0; level = 1; lives = 3; parts = []; shake = 0; hitT = 0; msg = 0;
+    pad = { x: W / 2, w: 92 };
+    buildLevel(); ready();
+  }
+  function launch() {
+    const a = (-90 + (Math.random() * 40 - 20)) * Math.PI / 180, sp = speedOf();
+    ball.vx = Math.cos(a) * sp; ball.vy = Math.sin(a) * sp; state = 'play';
+  }
+  function gameOver() {
+    state = 'over';
+    if (score > best) { best = score; try { localStorage.setItem(BEST_KEY, best); } catch {} }
+  }
+  function pop(b) {
+    const col = RANKS[b.rank].body;
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * 6.28, s = 60 + Math.random() * 120;
+      parts.push({ x: b.x + BW / 2, y: b.y + BH / 2, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, life: 0.5, col });
+    }
+  }
+  function tap() {
+    if (state === 'over') return reset();
+    if (state === 'ready') launch();
+  }
+
+  // ボールの1歩ぶんの動き
+  function step(dx, dy) {
+    ball.x += dx; ball.y += dy;
+    const r = BALL_R;
+    if (ball.x < r) { ball.x = r; ball.vx = Math.abs(ball.vx); }
+    if (ball.x > W - r) { ball.x = W - r; ball.vx = -Math.abs(ball.vx); }
+    if (ball.y < 58 + r) { ball.y = 58 + r; ball.vy = Math.abs(ball.vy); }
+    // パドル（当たった位置で角度が変わる）
+    if (ball.vy > 0 && ball.y + r >= PAD_Y && ball.y + r <= PAD_Y + PAD_H + 10 && Math.abs(ball.x - pad.x) <= pad.w / 2 + r * 0.6) {
+      const k = Math.max(-1, Math.min(1, (ball.x - pad.x) / (pad.w / 2)));
+      const a = (-90 + k * 62) * Math.PI / 180, sp = Math.min(Math.hypot(ball.vx, ball.vy) + 4, 560);
+      ball.vx = Math.cos(a) * sp; ball.vy = Math.sin(a) * sp; ball.y = PAD_Y - r; hitT = 0.15;
+    }
+    // ブロック（1歩で1個まで）
+    for (const b of bricks) {
+      if (b.hp <= 0) continue;
+      const cx = Math.max(b.x, Math.min(ball.x, b.x + BW)), cy = Math.max(b.y, Math.min(ball.y, b.y + BH));
+      const ox = ball.x - cx, oy = ball.y - cy;
+      if (ox * ox + oy * oy >= r * r) continue;
+      if (ox === 0 && oy === 0) { ball.vy = -ball.vy; } // 中にめり込んだとき
+      else if (Math.abs(ox) > Math.abs(oy)) { ball.vx = ox > 0 ? Math.abs(ball.vx) : -Math.abs(ball.vx); ball.x = cx + Math.sign(ox) * r; }
+      else { ball.vy = oy > 0 ? Math.abs(ball.vy) : -Math.abs(ball.vy); ball.y = cy + Math.sign(oy) * r; }
+      b.hp--; b.flash = 0.15; hitT = 0.15; shake = 2;
+      if (b.hp <= 0) { score++; pop(b); }
+      return;
+    }
+  }
+  function update(dt) {
+    t += dt; hitT = Math.max(0, hitT - dt); shake = Math.max(0, shake - dt * 20); msg = Math.max(0, msg - dt);
+    bricks.forEach(b => { b.flash = Math.max(0, b.flash - dt); });
+    parts.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 500 * dt; p.life -= dt; });
+    parts = parts.filter(p => p.life > 0);
+    if (state === 'ready') { ball.x = pad.x; ball.y = PAD_Y - BALL_R; return; }
+    if (state !== 'play') return;
+    const n = Math.ceil(Math.hypot(ball.vx, ball.vy) * dt / 4);
+    for (let i = 0; i < n; i++) step(ball.vx * dt / n, ball.vy * dt / n);
+    ball.rot += ball.vx * dt * 0.03;
+    if (ball.y - BALL_R > H) {                      // 落とした
+      lives--; shake = 6;
+      if (lives <= 0) gameOver(); else ready();
+    } else if (bricks.every(b => b.hp <= 0)) {      // 全部崩した
+      level++; msg = 1.6; buildLevel(); ready();
+    }
+  }
+
+  function text(g, s, x, y, size, color = '#3a2a10', stroke = '#fff8dc') {
+    g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = size / 5; g.strokeStyle = stroke; g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
+  }
+
+  // ブロック = ランクの色に塗った、まわし付きのはなりきし（四角く整形）
+  function drawBrick(g, b) {
+    const rk = RANKS[b.rank], dmg = b.hp < b.hp0;
+    g.save();
+    if (b.flash > 0) g.translate(0, -2);
+    rrect(g, b.x, b.y, BW, BH, 9); g.fillStyle = b.flash > 0 ? '#fff' : rk.body; g.fill();
+    g.save(); rrect(g, b.x, b.y, BW, BH, 9); g.clip();
+    g.fillStyle = rk.belt; g.fillRect(b.x, b.y + BH - 7, BW, 7);      // まわしの帯
+    g.restore();
+    rrect(g, b.x, b.y, BW, BH, 9); g.lineWidth = b.hp0 > 1 && !dmg ? 4 : 2.5; g.strokeStyle = '#3a2a10'; g.stroke();
+    drawFace(g, dmg ? 'hit' : 'normal', b.x + BW / 2, b.y + BH / 2 - 3, 46);
+    g.restore();
+  }
+
+  function draw() {
+    const g = ctx, lv = rankOf(score);
+    g.save();
+    if (shake > 0) g.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
+    // 背景（土俵の砂）
+    g.fillStyle = '#f6e7b8'; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(190,150,70,.13)';
+    for (let i = 0; i < 14; i++) g.fillRect(0, 70 + i * 48, W, 22);
+    // 土俵の端（落ちる場所）
+    g.fillStyle = '#c8a24a'; g.fillRect(0, H - 22, W, 22);
+    g.fillStyle = '#3a2a10'; g.fillRect(0, H - 24, W, 3);
+
+    bricks.forEach(b => { if (b.hp > 0) drawBrick(g, b); });
+    parts.forEach(p => {
+      g.globalAlpha = Math.max(0, p.life * 2); g.fillStyle = p.col; g.strokeStyle = '#3a2a10'; g.lineWidth = 1.5;
+      g.beginPath(); g.arc(p.x, p.y, 4, 0, 6.28); g.fill(); g.stroke(); g.globalAlpha = 1;
+    });
+
+    // パドル（米俵）
+    const px = pad.x - pad.w / 2;
+    rrect(g, px, PAD_Y, pad.w, PAD_H, 10); g.fillStyle = '#d9b25a'; g.fill();
+    g.save(); rrect(g, px, PAD_Y, pad.w, PAD_H, 10); g.clip();
+    g.strokeStyle = 'rgba(120,80,20,.55)'; g.lineWidth = 2;
+    for (let x = px + 10; x < px + pad.w; x += 12) { g.beginPath(); g.moveTo(x, PAD_Y); g.lineTo(x - 4, PAD_Y + PAD_H); g.stroke(); }
+    g.fillStyle = '#8a5a1a'; g.fillRect(px, PAD_Y + PAD_H / 2 - 2, pad.w, 4);   // 縄
+    g.restore();
+    rrect(g, px, PAD_Y, pad.w, PAD_H, 10); g.lineWidth = 3; g.strokeStyle = '#3a2a10'; g.stroke();
+
+    // ボール（転がるはなりきし）
+    if (state !== 'over') drawSumo(g, lv, hitT > 0 ? 'hit' : 'normal', ball.x, ball.y, BALL_R + 3, ball.rot);
+
+    // 上部バー（位・命・スコア）
+    g.fillStyle = 'rgba(255,248,220,.96)'; g.fillRect(0, 0, W, 58);
+    g.strokeStyle = '#3a2a10'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 58); g.lineTo(W, 58); g.stroke();
+    text(g, RANKS[lv].name, 70, 22, 22, '#3a2a10', 'rgba(0,0,0,0)');
+    text(g, `第${level}場所`, 70, 45, 13, '#7a5a20', 'rgba(0,0,0,0)');
+    for (let i = 0; i < 3; i++) { g.globalAlpha = i < lives ? 1 : .25; drawSumo(g, lv, 'normal', W / 2 - 40 + i * 40, 30, 14); }
+    g.globalAlpha = 1;
+    text(g, String(score), W - 40, 30, 28, '#3a2a10', 'rgba(0,0,0,0)');
+    g.restore();
+
+    if (state === 'ready') {
+      text(g, 'ドラッグで俵を動かして', W / 2, 540, 18);
+      text(g, 'タップで 発射', W / 2, 570, 22, '#2e7d32');
+    }
+    if (msg > 0) text(g, `第${level}場所へ！`, W / 2, 400, 36, '#fff', '#3a2a10');
+    if (state === 'over') {
+      g.fillStyle = 'rgba(58,42,16,.5)'; g.fillRect(0, 0, W, H);
+      g.drawImage(IMG.home, W / 2 - 100, 130, 200, 200);
+      text(g, 'おしまい！', W / 2, 360, 36, '#fff', '#3a2a10');
+      text(g, `${score} 点  ベスト ${best}`, W / 2, 415, 22, '#fff', '#3a2a10');
+      text(g, 'タップで もういちど', W / 2, 480, 22, '#9dffb0', '#3a2a10');
+    }
+  }
+
+  let last = 0;
+  function frame(now) {
+    toList.hidden = state === 'play';
+    const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
+    update(dt); draw(); requestAnimationFrame(frame);
+  }
+  const clampPad = x => Math.max(pad.w / 2, Math.min(W - pad.w / 2, x));
+  const movePad = e => { const r = cv.getBoundingClientRect(); pad.x = clampPad((e.clientX - r.left) / r.width * W); };
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); if (state !== 'over') movePad(e); tap(); });
+  cv.addEventListener('pointermove', e => { if (state !== 'over') movePad(e); });
+  const keys = {};
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) tap(); }
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { e.preventDefault(); keys[e.code] = true; }
+  });
+  window.addEventListener('keyup', e => { keys[e.code] = false; });
+  setInterval(() => {
+    const d = (keys.ArrowRight ? 1 : 0) - (keys.ArrowLeft ? 1 : 0);
+    if (d && pad && state !== 'over') pad.x = clampPad(pad.x + d * 9);
+  }, 16);
+
+  loadImages().then(() => { buildSprites(); reset(); requestAnimationFrame(frame); })
+    .catch(err => { document.body.textContent = err.message; });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>

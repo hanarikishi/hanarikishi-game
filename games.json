@@ -1,5 +1,15 @@
 [
   {
+    "id": "breakout",
+    "title": "はなりきしブロック崩し",
+    "desc": "米俵で打ち返して、はなりきしのブロックを崩す",
+    "path": "breakout/",
+    "thumb": "thumbs/breakout.jpg",
+    "tags": ["アクション"],
+    "added": "2026-10-21",
+    "best": { "key": "sumo-breakout-best", "type": "number", "unit": "点" }
+  },
+  {
     "id": "shoot",
     "title": "はなりきしシュート",
     "desc": "引っぱって、はなしてシュート。横画面で80ステージ",
