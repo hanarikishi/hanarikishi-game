@@ -2,7 +2,7 @@
   {
     "id": "breakout",
     "title": "はなりきしブロック崩し",
-    "desc": "米俵で打ち返して、はなりきしのブロックを崩す",
+    "desc": "はなりきしの弾で崩す本格ブロック崩し。分裂・レーザーなどのパワーアップつき",
     "path": "breakout/",
     "thumb": "thumbs/breakout.jpg",
     "tags": ["アクション"],
