@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>はなりきし はっけよい！</title>
+<title>はっけよい！はなりきし</title>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="はなりきしゲームズ">
-<meta property="og:title" content="はなりきし はっけよい！">
+<meta property="og:title" content="はっけよい！はなりきし">
 <meta property="og:description" content="合図でタップ。5回の平均反応速度で番付が決まる、立ち合い反射神経テスト">
 <meta property="og:url" content="https://hanarikishi.github.io/hanarikishi-game/hakkeyoi/">
 <meta property="og:image" content="https://hanarikishi.github.io/hanarikishi-game/thumbs/hakkeyoi.jpg">
@@ -55,7 +55,7 @@
   const W = 420, H = 700;
   const TRIES = 5;                 // 1回の勝負は5回の平均
   const BEST_KEY = 'sumo-hakkeyoi-best';
-  const EARLY_MS = 90;             // これより速いのは「お手つき」あつかい（人にはむり）
+  const EARLY_MS = 70;             // これより速いのは「お手つき」あつかい（人にはむり）
 
   // 番付（5回の平均の反応速度）
   const RANKS = [
@@ -125,10 +125,10 @@
   const ctx = cv.getContext('2d');
   ctx.scale(cv.width / W, cv.height / H);
   // title → wait（見合って）→ go（合図）→ hit（結果）/ early（お手つき）→ …（5回）→ final
-  let state = 'title', t = 0, stT = 0, tries = [], waitLen = 2, goAt = 0, oppMs = 0, flash = 0, earlyN = 0, lastMs = 0, won = false, lv = RANKS.length - 1, finalRank = 0;
+  let state = 'title', t = 0, stT = 0, tries = [], waitLen = 2, goAt = 0, oppMs = 0, flash = 0, earlyN = 0, lastMs = 0, won = false, lv = 0, finalRank = 0, oppLv = 3;   // lv = 自分の色（0 = 横綱）
   const avg = () => tries.reduce((a, b) => a + b, 0) / (tries.length || 1);
-  function newRun() { tries = []; earlyN = 0; lv = RANKS.length - 1; toWait(); }
-  function toWait() { state = 'wait'; stT = 0; waitLen = 1.3 + Math.random() * 2.7; }
+  function newRun() { tries = []; earlyN = 0; toWait(); }
+  function toWait() { state = 'wait'; stT = 0; waitLen = 1.3 + Math.random() * 2.7; oppLv = 1 + Math.floor(Math.random() * (RANKS.length - 1)); }
   function tap(ts) {
     if (state === 'title') return newRun();
     if (state === 'final') { if (stT > 0.7) newRun(); return; }
@@ -146,7 +146,7 @@
     if (state === 'early' && stT > 1.3) toWait();
     if (state === 'hit' && stT > 1.4) {
       if (tries.length >= TRIES) {
-        state = 'final'; stT = 0; finalRank = rankOf(avg()); lv = finalRank; beep(784, 0.3, 'triangle', 0.07, 400);
+        state = 'final'; stT = 0; finalRank = rankOf(avg()); beep(784, 0.3, 'triangle', 0.07, 400);
         try { const b = +localStorage.getItem(BEST_KEY) || 0, a = Math.round(avg()); if (!b || a < b) localStorage.setItem(BEST_KEY, a); } catch {}   // 一覧ページに出す ベスト（平均の最短）
       } else toWait();
     }
@@ -190,7 +190,7 @@
   function draw() {
     const g = ctx;
     drawBg(g);
-    const pl = lv, op = (lv + 4) % RANKS.length;
+    const pl = 0, op = oppLv;
     let px = 130, ox = 290, psx = 1, psy = 1, osx = 1, osy = 1, pface = 'normal', oface = 'normal', prot = 0, orot = 0;
     const br = Math.sin(t * 3) * 0.015;
     if (state === 'wait' || state === 'title' || state === 'early') { psy = osy = 0.9 + br; psx = osx = 1.03 - br; }   // しこって かまえている
@@ -222,8 +222,8 @@
 
     // 中央の文字
     if (state === 'title') {
-      text(g, 'はなりきし', W / 2, 218, 30, '#ffe082', '#2a1040');
-      text(g, 'はっけよい！', W / 2, 272, 52, '#fff', '#8a1c10');
+      text(g, 'はっけよい！', W / 2, 218, 30, '#ffe082', '#2a1040');
+      text(g, 'はなりきし', W / 2, 272, 54, '#fff', '#8a1c10');
       text(g, '合図が 出たら すぐ タップ', W / 2, 326, 18, '#fff', '#2a1040');
       text(g, `${TRIES}回の 平均で 番付が きまる`, W / 2, 352, 16, '#ffe9b0', '#2a1040');
       const b = window.HanaRank && HanaRank.myBest('d');
@@ -254,7 +254,7 @@
       const rk = RANKS[finalRank], av = Math.round(avg()), best = Math.min(...tries);
       text(g, `${TRIES}回の 平均`, W / 2, 80, 20, '#fff', '#2a1040');
       text(g, `${av} ms`, W / 2, 150, 72, '#ffe27a', '#3a1a00');
-      drawSumo(g, finalRank, finalRank <= 5 ? 'win' : 'normal', W / 2, 372, 1.35, 1.35 + Math.abs(Math.sin(t * 6)) * 0.05);
+      drawSumo(g, 0, finalRank <= 5 ? 'win' : 'normal', W / 2, 372, 1.35, 1.35 + Math.abs(Math.sin(t * 6)) * 0.05);
       text(g, `番付  ${rk.name}`, W / 2, 418, 40, '#fff', '#8a1c10');
       text(g, rk.msg, W / 2, 458, 17, '#ffe9b0', '#2a1040');
       text(g, tries.map(x => x + '').join('  '), W / 2, 494, 15, '#cfd6ff', '#2a1040');
@@ -273,13 +273,13 @@
     const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
     const was = state;
     update(dt);
-    if (state === 'go' && was !== 'go') { flash = 0.5; oppMs = 170 + Math.random() * 130; armed = true; }
+    if (armed && state === 'go') { goAt = now; armed = false; beep(880, 0.12, 'square', 0.07); }   // 1つ前のフレームで描いた合図が、いま表示された
+    if (state === 'go' && was !== 'go') { flash = 0.5; oppMs = 170 + Math.random() * 130; armed = true; goAt = 1e12; }   // 表示されるまでは、タップしても お手つきあつかい
     draw();
-    if (armed && state === 'go') { goAt = performance.now(); armed = false; beep(880, 0.12, 'square', 0.07); }
     const showEnd = state === 'final' && stT > 0.4, avgMs = Math.round(avg());
     toList.hidden = !(state === 'title' || state === 'final');
     const rk = RANKS[finalRank] || RANKS[0];
-    HanaShare.update(showEnd, `はなりきし はっけよい！ 平均 ${avgMs}ms【${rk.name}】（最速 ${tries.length ? Math.min(...tries) : 0}ms）`);
+    HanaShare.update(showEnd, `はっけよい！はなりきし 平均 ${avgMs}ms【${rk.name}】（最速 ${tries.length ? Math.min(...tries) : 0}ms）`);
     HanaRank.update(showEnd, avgMs);
     requestAnimationFrame(frame);
   }

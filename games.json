@@ -29,6 +29,16 @@
     "best": { "key": "sumo-surv-best", "type": "time", "label": "最長" }
   },
   {
+    "id": "hakkeyoi",
+    "title": "はっけよい！はなりきし",
+    "desc": "合図でタップ。5回の平均の反応速度で番付が決まる、立ち合い反射神経テスト",
+    "path": "hakkeyoi/",
+    "thumb": "thumbs/hakkeyoi.jpg",
+    "tags": ["反射神経"],
+    "added": "2026-10-24",
+    "best": { "key": "sumo-hakkeyoi-best", "type": "number", "unit": "ms" }
+  },
+  {
     "id": "flappy",
     "title": "はなりきしフラッピー",
     "desc": "両手の軍配で羽ばたき、米俵をよける",
@@ -87,15 +97,5 @@
     "tags": ["スポーツ"],
     "added": "2026-10-20",
     "best": { "key": "sumo-shoot-best", "type": "number", "unit": "点" }
-  },
-  {
-    "id": "hakkeyoi",
-    "title": "はなりきし はっけよい！",
-    "desc": "合図でタップ。5回の平均の反応速度で番付が決まる、立ち合い反射神経テスト",
-    "path": "hakkeyoi/",
-    "thumb": "thumbs/hakkeyoi.jpg",
-    "tags": ["反射神経"],
-    "added": "2026-10-24",
-    "best": { "key": "sumo-hakkeyoi-best", "type": "number", "unit": "ms" }
   }
 ]

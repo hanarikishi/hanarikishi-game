@@ -15,7 +15,7 @@
     survivors: { title: 'はなりきしサバイバーズ', unit: '', dir: 'desc', fmt: v => `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(Math.floor(v % 60)).padStart(2, '0')}` },
     shogi:     { title: 'はなりきし将棋', unit: '連勝', dir: 'desc' },
     shoot:     { title: 'はなりきしシュート', unit: '点', dir: 'desc' },
-    hakkeyoi:  { title: 'はなりきし はっけよい！', unit: 'ms', dir: 'asc' },
+    hakkeyoi:  { title: 'はっけよい！はなりきし', unit: 'ms', dir: 'asc' },
   };
   const id = (location.pathname.match(/\/([^\/]+)\/(?:index\.html)?$/) || [])[1] || 'game';
   const G = GAMES[id] || { title: id, unit: '', dir: 'desc' };
@@ -58,7 +58,7 @@
       const app = A.initializeApp(cfg()), auth = Au.getAuth(app);
       await Au.signInAnonymously(auth);
       return { auth, db: F.getFirestore(app), F };
-    })().catch(() => null);
+    })().catch(e => { console.warn('[rank] Firebase につながりません', e); fbP = null; return null; });
     return fbP;
   }
   async function pushRemote(p, v) {
@@ -68,7 +68,7 @@
       const cur = await F.getDoc(ref);
       if (cur.exists() && !better(v, cur.data().v)) return;
       await F.setDoc(ref, { name: getName().slice(0, 12), v, dir: G.dir, t: F.serverTimestamp() });
-    } catch {}
+    } catch (e) { console.warn('[rank] 記録を送れません', e); }
   }
   async function fetchTop(p) {
     const f = await fb(); if (!f) return null;
@@ -78,6 +78,12 @@
       const snap = await F.getDocs(q);
       return snap.docs.map(d => ({ uid: d.id, me: d.id === auth.currentUser.uid, ...d.data() }));
     } catch { return null; }
+  }
+
+  // この端末のベストを、みんなの順位へ送る（いまの記録より良いときだけ書きかわる。前に送れていなかった分も、ここで追いつく）
+  function syncRemote() {
+    const g = loadLocal()[id] || {}, K = keys();
+    for (const p of ['d', 'w', 'm', 'a']) if (typeof g[K[p]] === 'number') pushRemote(p, g[K[p]]);
   }
 
   // ---- 記録する ----
@@ -93,7 +99,7 @@
     }
     saveLocal(L);
     last = { v, up };
-    up.forEach(p => pushRemote(p, v));
+    syncRemote();
     return up;
   }
 
@@ -143,6 +149,7 @@
   }
   function open() {
     css(); if (modalEl) return;
+    syncRemote();
     modalEl = document.createElement('div'); modalEl.id = 'hrModal';
     modalEl.innerHTML = `<div class="box"><h2>🏆 ${esc(G.title)}</h2><div class="sub">日本時間で 日・週・月が かわります</div>
       <div class="tabs">${TABS.map(([p, n]) => `<button data-p="${p}">${n}</button>`).join('')}</div>
