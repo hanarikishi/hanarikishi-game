@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#080c14" />
+  <title>どすこい！はなりきし</title>
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="はなりきしゲームズ">
+  <meta property="og:title" content="どすこい！はなりきし">
+  <meta property="og:description" content="力士を育てて、序の口から横綱を目指す一代記。引退したら親方になって次の代へ">
+  <meta property="og:url" content="https://hanarikishi.github.io/hanarikishi-game/life/">
+  <meta property="og:image" content="https://hanarikishi.github.io/hanarikishi-game/thumbs/life.jpg">
+  <meta name="twitter:card" content="summary">
+  <meta name="description" content="力士を育てて、序の口から横綱を目指す一代記。引退したら親方になって次の代へ">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="icon" href="../parts/icon-192.png">
+  <link rel="apple-touch-icon" href="../parts/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="src/styles.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <div id="version-badge"></div>
+
+  <!-- Data -->
+  <script src="src/data/ngwords.js"></script>
+  <script src="src/data/kimarite.js"></script>
+  <script src="src/data/banzuke.js"></script>
+  <script src="src/data/aging.js"></script>
+  <script src="src/data/rikishi.js"></script>
+  <script src="src/data/chanko.js"></script>
+  <script src="src/data/tensei.js"></script>
+  <script src="src/data/skills.js"></script>
+  <script src="src/data/achievements.js"></script>
+  <script src="src/data/roster.js"></script>
+
+  <!-- Systems -->
+  <script src="src/systems/basho.js"></script>
+  <script src="src/systems/rosterBasho.js"></script>
+  <script src="src/systems/banzukeHensei.js"></script>
+  <script src="src/systems/rosterPlayer.js"></script>
+  <script src="src/systems/rosterRelations.js"></script>
+  <script src="src/systems/rosterRecords.js"></script>
+  <script src="src/systems/sound.js"></script>
+  <script src="src/systems/bgm.js"></script>
+  <script src="src/systems/lookSprite.js"></script>
+
+  <!-- Scenes -->
+  <script src="src/scenes/title.js"></script>
+  <script src="src/scenes/create.js"></script>
+  <script src="src/scenes/keikoStage.js"></script>
+  <script src="src/scenes/home.js"></script>
+  <script src="src/scenes/lookEdit.js"></script>
+  <script src="src/scenes/bout.js"></script>
+  <script src="src/scenes/bashoResult.js"></script>
+  <script src="src/scenes/banzukeView.js"></script>
+  <script src="src/scenes/tensei.js"></script>
+  <script src="src/scenes/isan.js"></script>
+  <script src="src/scenes/dojoUpgrade.js"></script>
+  <script src="src/scenes/skillMap.js"></script>
+  <script src="src/scenes/achievements.js"></script>
+  <script src="src/scenes/meikan.js"></script>
+  <script src="src/scenes/records.js"></script>
+  <script src="src/scenes/allocate.js"></script>
+  <script src="src/scenes/scout.js"></script>
+
+  <!-- Main controller -->
+  <script src="src/main.js"></script>
+  <script>if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
