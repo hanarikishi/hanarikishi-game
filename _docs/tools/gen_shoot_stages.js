@@ -54,35 +54,53 @@ function addBlocker(st, r, kind) {
   }
   return true;
 }
-const base = (r, i) => ({ shooter: R(r, 50, 300), hoop: { x: R(r, 480, 640), y: R(r, 150, 280), board: 'R' } });
+// ---- 4章 × 8面 ----
+const PER = 8, TOTAL = 32;
+const lerp = (a, b, k) => a + (b - a) * k;
 
+// 面のかたち。dist=打つ人とゴールの距離 / bank=ボードへ当てる壁 / moving=ゴールが動く（v=縦 h=横 fast=速い）
+function make(r, k, o) {
+  const hx0 = o.dist ? R(r, Math.max(560, o.dist + 45), 640) : o.moving === 'h' ? R(r, 500, 620) : R(r, 480, 640);
+  const hy = o.moving === 'v' ? R(r, 170, 250) : R(r, 150, 280);
+  const shooter = o.dist ? Math.max(45, hx0 - o.dist) : R(r, 50, 300);
+  const hx = o.bank ? Math.max(hx0, 560) : hx0;
+  const st = { shooter, hoop: { x: hx, y: hy, board: 'R' } };
+  if (o.bank) st.walls = [[hx - R(r, 90, 130), hy - R(r, 40, 80), hx - 20, hy - R(r, 55, 70), 'w']];
+  if (o.moving) {
+    const amp = R(r, 30, 40 + k);
+    if (o.moving === 'h') st.hoop.dx = amp; else st.hoop.dy = amp;
+    st.hoop.period = o.fast ? R(r, 16, 24) / 10 : R(r, 22, 40) / 10;
+  }
+  return st;
+}
+
+// 章の中身（1-1〜1-4 は「距離が遠くなるだけ」。そのあと仕掛けを足して、最後の章で全部まぜる）
 const CHAPTERS = [
-  { name: 'はじめてのコート', obs: [], make: (r, i) => ({ shooter: R(r, 50, 100 + i * 20), hoop: { x: R(r, 470, 520) + i * 12, y: R(r, 130, 280), board: 'R' } }) },
-  { name: '空中の板', obs: ['plank'], make: base },
-  { name: 'ふたつの板', obs: ['plank', 'plank'], make: base },
-  { name: 'バンクショット', obs: [], make: (r, i) => {
-    const hx = R(r, 560, 640), hy = R(r, 170, 280);
-    return { shooter: R(r, 50, 180), hoop: { x: hx, y: hy, board: 'R' }, walls: [[hx - R(r, 90, 130), hy - R(r, 40, 80), hx - 20, hy - R(r, 55, 70), 'w']] };
-  } },
-  { name: '杭の森', obs: ['peg', 'peg'], make: base },
-  { name: '動くゴール', obs: [], make: (r, i) => {
-    const vert = r() < 0.6;
-    return { shooter: R(r, 50, 160), hoop: { x: R(r, 500, 620), y: R(r, 170, 250), board: 'R', dx: vert ? 0 : R(r, 30, 50 + i * 3), dy: vert ? R(r, 30, 50 + i * 4) : 0, period: R(r, 22, 40) / 10 } };
-  } },
-  { name: 'はねるマット', obs: ['mat', 'plank'], make: base },
-  { name: '総まとめ', obs: ['plank', 'peg', 'mat'], pick: 2, make: (r, i) => {
-    const st = base(r, i);
-    if (r() < 0.5) { st.hoop.dy = R(r, 30, 60); st.hoop.period = R(r, 25, 40) / 10; }
-    return st;
-  } },
+  { name: '遠いゴールと空中の板', specs: [
+    { o: { dist: 300 }, free: 1 }, { o: { dist: 390 }, free: 1 }, { o: { dist: 480 }, free: 1 }, { o: { dist: 570 }, free: 1 },
+    { o: {}, obs: ['plank'] }, { o: {}, obs: ['plank'] }, { o: {}, obs: ['plank', 'plank'] }, { o: { dist: 480 }, obs: ['plank', 'plank'] },
+  ] },
+  { name: 'バンクと杭の森', specs: [
+    { o: { bank: 1 } }, { o: { bank: 1 } }, { o: { bank: 1, dist: 480 } },
+    { o: {}, obs: ['peg'] }, { o: {}, obs: ['peg'] }, { o: {}, obs: ['peg', 'peg'] },
+    { o: {}, obs: ['peg', 'plank'] }, { o: { bank: 1 }, obs: ['peg'] },
+  ] },
+  { name: '動くゴールとはねるマット', specs: [
+    { o: { moving: 'v' } }, { o: { moving: 'v' } }, { o: { moving: 'h' } }, { o: { moving: 'h', fast: 1 } },
+    { o: {}, obs: ['mat'] }, { o: {}, obs: ['mat', 'plank'] },
+    { o: { moving: 'v' }, obs: ['mat'] }, { o: { moving: 'h' }, obs: ['plank'] },
+  ] },
+  { name: '総まとめ', specs: [
+    { o: { bank: 1 }, obs: ['plank'] }, { o: { moving: 'v' }, obs: ['peg'] }, { o: {}, obs: ['mat', 'peg'] },
+    { o: { moving: 'h' }, obs: ['mat', 'plank'] }, { o: { bank: 1 }, obs: ['mat'] }, { o: { moving: 'v', fast: 1 }, obs: ['peg', 'plank'] },
+    { o: {}, obs: ['peg', 'mat', 'plank'] }, { o: { moving: 'v', fast: 1 }, obs: ['plank', 'peg', 'mat'] },
+  ] },
 ];
 
-// 章ごとの輪の大きさ（半幅）と、入る打ち方の割合の範囲。章が進むほど輪が小さく、入る打ち方が少なくなる
-const RIMS = [40, 37, 34, 31, 29, 27, 25, 23];
-const HI = [0.20, 0.13, 0.09, 0.065, 0.045, 0.045, 0.04, 0.03];
-
-// 天井: 輪の高さからどれだけ上に置くか（章が進むほど低く＝高く打ち上げられない）
-const GAP_LO = [190, 170, 150, 135, 115, 100, 85, 70];
+// 先へ進むほど、輪は小さく・天井は低く・入る打ち方は少なく
+const RIM_AT = k => Math.round(lerp(40, 23, k / (TOTAL - 1)));
+const GAP_AT = k => lerp(190, 70, k / (TOTAL - 1));
+const HI_AT = k => 0.20 * Math.pow(0.15, k / (TOTAL - 1));
 
 // 解き方の見本（入る打ち方のまん中あたり）。同じ打ち方が何面も通るのを防ぐのに使う
 function sampleSol(st) {
@@ -94,38 +112,40 @@ function sampleSol(st) {
   return sols.length ? sols[Math.floor(sols.length / 2)] : null;
 }
 
-const out = [];
-let seed = 7;
+const out = [], notes = [];
+let seed = 11;
 CHAPTERS.forEach((ch, ci) => {
   const got = [];
-  for (let i = 0; got.length < 10; i++) {
-    const r = rng(seed++);
-    if (i > 6000) throw new Error('作れない: ' + ch.name);
-    const st = ch.make(r, got.length);
-    st.hoop.rim = RIMS[ci];
-    st.ceil = Math.max(30, Math.round(st.hoop.y - (st.hoop.dy || 0) - GAP_LO[ci] - r() * 60));
-    st.walls = st.walls || []; st.pegs = st.pegs || [];
-    let kinds = ch.obs.slice();
-    if (ch.pick) kinds = kinds.sort(() => r() - 0.5).slice(0, ch.pick);
-    if (!kinds.every(k => addBlocker(st, r, k))) continue;
-    const ratio = solveRatio(st);
-    // 章ごとの範囲に収まるものだけを使う（前の章よりはっきり難しくなる）
-    const hi = HI[ci], lo = Math.max(0.003, hi * 0.25);
-    if (i % 200 === 199) process.stdout.write(`  ..${ch.name} ${i + 1}回試して ${got.length}面\n`);
-    // 障害物があるなら、あるとないとで入りやすさが3割以上変わるものだけ（飾りの障害物は使わない）
-    const hasObs = st.walls.length + st.pegs.length > 0;
-    if (ratio >= lo && ratio <= hi && hasObs) { const bare = bareRatio(st); if (Math.abs(bare - ratio) < 0.25 * Math.max(bare, ratio)) continue; st.bare = +bare.toFixed(4); }
-    if (ratio >= lo && ratio <= hi) {
-      // 直前の3面と、同じ打ち方で入ってしまうものは使わない
-      st.sol = sampleSol(st);
-      if (!st.sol || got.slice(-3).some(o => S.simulate(st, o.sol[0], o.sol[1]).scored || S.simulate(o, st.sol[0], st.sol[1]).scored)) continue;
+  ch.specs.forEach((spec, si) => {
+    const k = ci * PER + si;
+    let obs = (spec.obs || []).slice(), made = null;
+    while (!made) {
+      for (let i = 0; i < 4000 && !made; i++) {
+        const r = rng(seed++);
+        const st = make(r, k, spec.o);
+        st.hoop.rim = RIM_AT(k);
+        st.ceil = Math.max(30, Math.round(st.hoop.y - (st.hoop.dy || 0) - GAP_AT(k) - r() * 60));
+        st.walls = st.walls || []; st.pegs = st.pegs || [];
+        if (!obs.every(kd => addBlocker(st, r, kd))) continue;
+        const ratio = solveRatio(st);
+        const hi = spec.free ? 1 : HI_AT(k), lo = spec.free ? 0.02 : Math.max(0.003, hi * 0.25);
+        if (ratio < lo || ratio > hi) continue;
+        // 障害物があるなら、あるとないとで入りやすさが3割以上変わるものだけ（飾りは使わない）
+        const hasObs = st.walls.length + st.pegs.length > (spec.o.bank ? 1 : 0);
+        if (hasObs) { const bare = bareRatio(st); if (Math.abs(bare - ratio) < 0.25 * Math.max(bare, ratio)) continue; }
+        // 直前の3面と、同じ打ち方で入ってしまうものは使わない
+        st.sol = sampleSol(st);
+        if (!st.sol || got.slice(-3).some(o => S.simulate(st, o.sol[0], o.sol[1]).scored || S.simulate(o, st.sol[0], st.sol[1]).scored)) continue;
+        st.ratio = +ratio.toFixed(4); made = st;
+      }
+      if (!made) { const dropped = obs.pop(); notes.push(`${ci + 1}-${si + 1}: 作れなかったので障害物 ${dropped} を外した`); if (!dropped) throw new Error('作れない: ' + ch.name + ' ' + (si + 1)); }
     }
-    if (ratio >= lo && ratio <= hi) { st.ratio = +ratio.toFixed(4); got.push(st); process.stdout.write(`${ch.name} ${got.length}/10 (${(ratio * 100).toFixed(1)}%)\n`); }
-  }
-  // 章の中はやさしい順
-  got.sort((a, b) => b.ratio - a.ratio);
-  got.forEach(st => { st.chapter = ci; delete st.sol; delete st.bare; out.push(st); });
+    process.stdout.write(`${ci + 1}-${si + 1} (${(made.ratio * 100).toFixed(1)}%) 輪${made.hoop.rim}\n`);
+    got.push(made);
+  });
+  got.forEach(st => { st.chapter = ci; out.push({ ...st, sol: undefined }); });
 });
-const js = '// node _docs/tools/gen_shoot_stages.js で作ったステージ（手で書きかえない）\nwindow.SHOOT_CHAPTERS = ' + JSON.stringify(CHAPTERS.map(c => c.name)) + ';\nwindow.SHOOT_STAGES = [\n' + out.map(s => '  ' + JSON.stringify(s)).join(',\n') + '\n];\n';
+notes.forEach(n => console.log(n));
+const js = '// node _docs/tools/gen_shoot_stages.js で作ったステージ（手で書きかえない）\nwindow.SHOOT_CHAPTERS = ' + JSON.stringify(CHAPTERS.map(c => c.name)) + ';\nwindow.SHOOT_PER = ' + PER + ';\nwindow.SHOOT_STAGES = [\n' + out.map(s => '  ' + JSON.stringify(s)).join(',\n') + '\n];\n';
 fs.writeFileSync(path.join(root, 'shoot', 'stages.js'), js);
 console.log('書き出し', out.length, '面');
