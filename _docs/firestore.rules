@@ -1,23 +1,48 @@
 rules_version = '2';
 // Firebase の「Firestore Database」→「ルール」に貼る。みんなの順位（ranks）だけを許す。
-// 記録は 1人（匿名ログインの uid）につき、期間ごとに1件。いまより良いときだけ書きかえられる。
+// 貼る前に、ルールの画面の「ルール プレイグラウンド」で、書きこみ・読み取りを試してください。
+//
+// 記録は 1人（匿名ログインの uid）につき、ゲームごと・期間ごとに1件。いまより良いときだけ書きかえられる。
+//   ゲームの id と、点数の範囲、期間の形は、ここで決めたものだけ通る（でたらめな書きこみで 無料枠を使いきられないように）。
+//   新しいゲームの順位を足すときは、gameOk() と maxOf() に足す。
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /ranks/{game}/{period}/{uid} {
-      allow read: if true;
-      allow create: if request.auth != null && request.auth.uid == uid && valid();
-      allow update: if request.auth != null && request.auth.uid == uid && valid()
-        && (resource.data.dir == 'asc' ? request.resource.data.v <= resource.data.v : request.resource.data.v >= resource.data.v);
-      allow delete: if false;
 
-      function valid() {
-        let d = request.resource.data;
-        return d.keys().hasOnly(['name', 'v', 'dir', 't'])
-          && d.name is string && d.name.size() >= 1 && d.name.size() <= 12
-          && d.v is number && d.v >= 0 && d.v <= 100000000
-          && (d.dir == 'asc' || d.dir == 'desc')
-          && d.t == request.time;
-      }
+    function gameOk(g) {
+      return g in ['suika', 'flappy', 'crossy', 'stack', 'breakout', 'survivors_lv', 'shoot', 'hakkeyoi'];
+    }
+    function maxOf(g) {
+      return {'suika': 1000000, 'flappy': 10000, 'crossy': 10000, 'stack': 5000, 'breakout': 1000000,
+              'survivors_lv': 1000, 'shoot': 1000000, 'hakkeyoi': 3000}[g];
+    }
+    function minOf(g) { return g == 'hakkeyoi' ? 80 : 1; }                  // はっけよいは、人にはできない速さをはじく
+    function dirOf(g) { return g == 'hakkeyoi' ? 'asc' : 'desc'; }          // 低いほど良い／高いほど良い
+    function pad2(n) { return n < 10 ? '0' + string(n) : string(n); }
+    function periodOk(p) {
+      let t = request.time + duration.value(9, 'h');                         // 日本時間
+      return p == 'all'
+        || p == 'm_' + string(t.year()) + '-' + pad2(t.month())
+        || p == 'd_' + string(t.year()) + '-' + pad2(t.month()) + '-' + pad2(t.day())
+        || p.matches('^w_20[0-9][0-9]-W[0-5][0-9]$');
+    }
+    function valid(g, p) {
+      let d = request.resource.data;
+      return gameOk(g) && periodOk(p)
+        && d.keys().hasOnly(['name', 'v', 'dir', 't'])
+        && d.name is string && d.name.size() >= 1 && d.name.size() <= 12
+        && d.v is number && d.v >= minOf(g) && d.v <= maxOf(g)
+        && d.dir == dirOf(g)
+        && d.t == request.time;
+    }
+
+    match /ranks/{game}/{period}/{uid} {
+      allow get: if true;
+      allow list: if request.query.limit <= 20;                              // 一覧は20件まで
+      allow create: if request.auth != null && request.auth.uid == uid && valid(game, period);
+      allow update: if request.auth != null && request.auth.uid == uid && valid(game, period)
+        && (dirOf(game) == 'asc' ? request.resource.data.v <= resource.data.v
+                                 : request.resource.data.v >= resource.data.v);
+      allow delete: if false;
     }
   }
 }

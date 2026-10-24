@@ -12,13 +12,13 @@
     crossy:    { title: 'はなりきしクロッシー', unit: '歩', dir: 'desc' },
     stack:     { title: 'はなりきしスタック', unit: '段', dir: 'desc' },
     breakout:  { title: 'はなりきしブロック崩し', unit: '点', dir: 'desc' },
-    survivors: { title: 'はなりきしサバイバーズ', unit: '', dir: 'desc', fmt: v => `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(Math.floor(v % 60)).padStart(2, '0')}` },
-    shogi:     { title: 'はなりきし将棋', unit: '連勝', dir: 'desc' },
+    survivors: { title: 'はなりきしサバイバーズ（レベル）', unit: '', dir: 'desc', key: 'survivors_lv', fmt: v => `Lv ${v}` },   // 記録の保存先を新しくして、時間のランキングをリセット
     shoot:     { title: 'はなりきしシュート', unit: '点', dir: 'desc' },
     hakkeyoi:  { title: 'はっけよい！はなりきし', unit: 'ms', dir: 'asc' },
   };
   const id = (location.pathname.match(/\/([^\/]+)\/(?:index\.html)?$/) || [])[1] || 'game';
   const G = GAMES[id] || { title: id, unit: '', dir: 'desc' };
+  const rid = G.key || id;   // 端末の記録と、みんなの順位の保存先の名前
   const fmtV = v => G.fmt ? G.fmt(v) : `${Math.round(v * 100) / 100}${G.unit}`;
   const better = (a, b) => G.dir === 'asc' ? a < b : a > b;
   // ニックネームの禁止ワード（下ネタ・Fワードなど）は「どすこい！はなりきし」の四股名と同じ。ngwords.js を、あとから読みこむ
@@ -43,7 +43,7 @@
   // ---- この端末の記録 ----
   function loadLocal() { try { return JSON.parse(localStorage.getItem(LOCAL_KEY)) || {}; } catch { return {}; } }
   function saveLocal(o) { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(o)); } catch {} }
-  function myBest(p) { const g = (loadLocal()[id] || {}); return g[keys()[p]]; }
+  function myBest(p) { const g = (loadLocal()[rid] || {}); return g[keys()[p]]; }
   const getName = () => { let n = DEFAULT_NAME; try { n = localStorage.getItem(NAME_KEY) || DEFAULT_NAME; } catch {} return ngReason(n) ? DEFAULT_NAME : n; };
   const setName = n => { try { localStorage.setItem(NAME_KEY, n); } catch {} };
 
@@ -63,7 +63,7 @@
   }
   async function pushRemote(p, v) {
     const f = await fb(); if (!f) return;
-    const { F, db, auth } = f, ref = F.doc(db, 'ranks', id, keys()[p], auth.currentUser.uid);
+    const { F, db, auth } = f, ref = F.doc(db, 'ranks', rid, keys()[p], auth.currentUser.uid);
     try {
       const cur = await F.getDoc(ref), nm = getName().slice(0, 12);
       if (cur.exists() && !better(v, cur.data().v)) {
@@ -77,7 +77,7 @@
     const f = await fb(); if (!f) return null;
     const { F, db, auth } = f;
     try {
-      const q = F.query(F.collection(db, 'ranks', id, keys()[p]), F.orderBy('v', G.dir), F.limit(20));
+      const q = F.query(F.collection(db, 'ranks', rid, keys()[p]), F.orderBy('v', G.dir), F.limit(20));
       const snap = await F.getDocs(q);
       return snap.docs.map(d => ({ uid: d.id, me: d.id === auth.currentUser.uid, ...d.data() }));
     } catch { return null; }
@@ -85,14 +85,14 @@
 
   // この端末のベストを、みんなの順位へ送る（いまの記録より良いときだけ書きかわる。前に送れていなかった分も、ここで追いつく）
   function syncRemote() {
-    const g = loadLocal()[id] || {}, K = keys();
+    const g = loadLocal()[rid] || {}, K = keys();
     for (const p of ['d', 'w', 'm', 'a']) if (typeof g[K[p]] === 'number') pushRemote(p, g[K[p]]);
   }
 
   // ---- 記録する ----
   function submit(v) {
     if (typeof v !== 'number' || !isFinite(v) || v < 0) return;
-    const K = keys(), L = loadLocal(), g = L[id] = L[id] || {}, up = [];
+    const K = keys(), L = loadLocal(), g = L[rid] = L[rid] || {}, up = [];
     for (const p of ['d', 'w', 'm', 'a']) if (g[K[p]] === undefined || better(v, g[K[p]])) { g[K[p]] = v; up.push(p); }
     // ふるい記録は消す（日は40日、週は14週、月は14か月ぶんだけ残す）
     const keep = { d: 40, w: 14, m: 14 };
@@ -165,7 +165,7 @@
       if (e.target === modalEl || e.target.id === 'hrClose') { modalEl.remove(); modalEl = null; return; }
       const b = e.target.closest('.tabs button'); if (b) { curTab = b.dataset.p; renderList(); return; }
       if (e.target.id === 'hrName') {
-        let msg = 'ランキングに のせる名前（12文字まで）', def = getName();
+        let msg = 'ランキングに のせる名前（12文字まで）\n※ ランキングに公開されます。本名は入れないでください', def = getName();
         for (;;) {
           const v = prompt(msg, def); if (v === null) break;
           const n = v.trim().slice(0, 12); if (!n) break;
