@@ -45,6 +45,7 @@
 <canvas id="game" width="840" height="1400"></canvas>
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
+<script src="../back.js"></script>
 <script src="../share.js"></script>
 <script src="../rank.js"></script>
 <script src="../firebase-config.js"></script>
@@ -483,6 +484,8 @@
     if (d && pad && state !== 'over') pad.x = clampPad(pad.x + d * 9);
   }, 16);
 
+  // 戻る操作（スワイプ・戻るボタン）: 本番中はポーズ。ふだんは前のページへ
+  HanaBack.init({ isPlaying: () => state === 'play' });
   loadImages().then(() => { buildSprites(); reset(true); requestAnimationFrame(frame); })
     .catch(err => { document.body.textContent = err.message; });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

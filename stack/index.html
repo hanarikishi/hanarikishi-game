@@ -45,6 +45,7 @@
 <canvas id="game" width="840" height="1400"></canvas>
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
+<script src="../back.js"></script>
 <script src="../share.js"></script>
 <script src="../rank.js"></script>
 <script src="../firebase-config.js"></script>
@@ -482,6 +483,16 @@
     drawSumo(g, sumoLv, face, fx, fy - lift, sx, sy);
   }
 
+  // 音のオン・オフのマーク（「どすこい！はなりきし」と同じ形。オフは×で、うすくする）
+  function drawSoundIcon(g, cx, cy, size, on, color) {
+    const k = size / 40;
+    g.save(); g.translate(cx - size / 2, cy - size / 2); g.scale(k, k);
+    g.globalAlpha *= on ? 1 : 0.45; g.fillStyle = color; g.strokeStyle = color; g.lineWidth = 2.6; g.lineCap = 'round';
+    g.fill(new Path2D('M6 15h7l9-8v26l-9-8H6z'));
+    g.stroke(new Path2D(on ? 'M27 13a9 9 0 0 1 0 14M31 9a14 14 0 0 1 0 22' : 'M27 14l10 12M37 14 27 26'));
+    g.restore();
+  }
+
   function draw() {
     const g = ctx;
     drawBg(g);
@@ -539,8 +550,7 @@
     if (combo >= 2 && state === 'play') text(g, `ぴったり ×${combo}`, W / 2, 200, 18, '#c0541a', 'rgba(255,255,255,.9)');
     if (winT > 0) text(g, '出世！ ' + RANKS[lv].name, W / 2, 232, 28, '#d9480f', 'rgba(255,255,255,.9)');
 
-    g.font = '20px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#4a3b66'; g.textBaseline = 'middle';
-    g.fillText(muted ? '🔇' : '🔊', W - 24, 28);
+    drawSoundIcon(g, W - 24, 28, 24, !muted, '#4a3b66'); g.textBaseline = 'middle';
     g.font = 'bold 12px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#6a5a7a';
     g.fillText('ベスト ' + best, 14, 28);
 
@@ -591,6 +601,8 @@
     if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'Enter') { e.preventDefault(); ac(); if (!e.repeat) place(); }
   });
 
+  // 戻る操作（スワイプ・戻るボタン）: 本番中はポーズ。ふだんは前のページへ
+  HanaBack.init({ isPlaying: () => state === 'play' });
   loadImages().then(() => {
     buildSprites();
     reset();

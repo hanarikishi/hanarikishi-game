@@ -45,6 +45,7 @@
 <canvas id="game" width="840" height="1400"></canvas>
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
+<script src="../back.js"></script>
 <script src="../share.js"></script>
 <script src="../rank.js"></script>
 <script src="../firebase-config.js"></script>
@@ -747,11 +748,20 @@
     g.font = 'bold 15px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#3a2a10';
     g.fillText('×' + coinsGot, W / 2 - 2, 42);
     // 音のON/OFF
-    g.font = '20px sans-serif'; g.textAlign = 'center';
-    g.fillText(muted ? '🔇' : '🔊', W - 24, HUD_H + 22);
+    drawSoundIcon(g, W - 24, HUD_H + 22, 24, !muted, '#3a2a10');
   }
 
   // ================= 描画 =================
+  // 音のオン・オフのマーク（「どすこい！はなりきし」と同じ形。オフは×で、うすくする）
+  function drawSoundIcon(g, cx, cy, size, on, color) {
+    const k = size / 40;
+    g.save(); g.translate(cx - size / 2, cy - size / 2); g.scale(k, k);
+    g.globalAlpha *= on ? 1 : 0.45; g.fillStyle = color; g.strokeStyle = color; g.lineWidth = 2.6; g.lineCap = 'round';
+    g.fill(new Path2D('M6 15h7l9-8v26l-9-8H6z'));
+    g.stroke(new Path2D(on ? 'M27 13a9 9 0 0 1 0 14M31 9a14 14 0 0 1 0 22' : 'M27 14l10 12M37 14 27 26'));
+    g.restore();
+  }
+
   function draw() {
     const g = ctx;
     camShake = shakeT > 0 ? [(Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8] : [0, 0];
@@ -846,6 +856,8 @@
     if (!e.repeat) tryMove(k[0], k[1]);
   });
 
+  // 戻る操作（スワイプ・戻るボタン）: 本番中はポーズ。ふだんは前のページへ
+  HanaBack.init({ isPlaying: () => state === 'play' });
   loadImages().then(() => {
     buildSprites();
     reset();

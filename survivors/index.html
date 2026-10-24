@@ -45,6 +45,7 @@
 <canvas id="game" width="840" height="1400"></canvas>
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
+<script src="../back.js"></script>
 <script src="../share.js"></script>
 <script src="../rank.js"></script>
 <script src="../firebase-config.js"></script>
@@ -1286,7 +1287,7 @@
     text(g, String(coins), W - 8, 46, 12, '#ffd24a', '#000', 'right');
     // 音・ポーズ
     g.font = '18px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
-    g.fillText(muted ? '🔇' : '🔊', W - 20, 70);
+    drawSoundIcon(g, W - 20, 70, 22, !muted, '#f5dc8c');
     g.fillText('⏸', W - 48, 70);
   }
 
@@ -1332,6 +1333,16 @@
       const pips = (d.max || 5);
       for (let k = 0; k < pips; k++) { g.fillStyle = k < c.lv ? '#ffd24a' : '#2a3050'; g.fillRect(x + 78 + k * 12, y + 74, 9, 6); }
     });
+  }
+
+  // 音のオン・オフのマーク（「どすこい！はなりきし」と同じ形。オフは×で、うすくする）
+  function drawSoundIcon(g, cx, cy, size, on, color) {
+    const k = size / 40;
+    g.save(); g.translate(cx - size / 2, cy - size / 2); g.scale(k, k);
+    g.globalAlpha *= on ? 1 : 0.45; g.fillStyle = color; g.strokeStyle = color; g.lineWidth = 2.6; g.lineCap = 'round';
+    g.fill(new Path2D('M6 15h7l9-8v26l-9-8H6z'));
+    g.stroke(new Path2D(on ? 'M27 13a9 9 0 0 1 0 14M31 9a14 14 0 0 1 0 22' : 'M27 14l10 12M37 14 27 26'));
+    g.restore();
   }
 
   function draw() {
@@ -1445,6 +1456,8 @@
     requestAnimationFrame(frame);
   }
 
+  // 戻る操作（スワイプ・戻るボタン）: 本番中はポーズ。ふだんは前のページへ
+  HanaBack.init({ isPlaying: () => state === 'play' });
   loadImages().then(() => {
     buildPixelSprites();
     buildTile();

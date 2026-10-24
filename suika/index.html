@@ -116,6 +116,7 @@
   </div>
 </div>
 
+<script src="../back.js"></script>
 <script src="../share.js"></script>
 <script src="../rank.js"></script>
 <script src="../firebase-config.js"></script>
@@ -496,6 +497,8 @@
   $('restart').onclick = start;
 
   // ---------- 起動 ----------
+  // 戻る操作（スワイプ・戻るボタン）: 本番中はポーズ。ふだんは前のページへ
+  HanaBack.init({ isPlaying: () => state === 'play' });
   loadImages().then(() => {
     buildSprites();
     buildChain();

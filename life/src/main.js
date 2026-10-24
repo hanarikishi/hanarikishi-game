@@ -1,4 +1,4 @@
-const APP_VERSION = '1.11.2';
+const APP_VERSION = '1.11.3';
 // セーブの形式。稽古・米俵を外した本場所のみモードから 2。これより古いセーブは読み込まない（新しく始める）
 const SAVE_VERSION = 2;
 
@@ -36,6 +36,39 @@ const Game = {
 
   init() {
     this.showScene('title');
+    this.initBack();
+  },
+
+  // ── 戻る操作（Android の戻るボタン・スワイプ）──────────────
+  // いきなり終了せず、取組中は一時停止・ホームとタイトルは「ゲームを終了しますか？」・ほかの画面は前の画面へ
+  initBack() {
+    const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (App && App.addListener) { App.addListener('backButton', () => this.handleBack()); return; }
+    // ウェブ版: 履歴にひとつ積んでおき、戻る操作を ここで受けとる（さいしょのタップのあとに積む）
+    const arm = () => { try { history.pushState({ hb: 1 }, ''); } catch {} };
+    const first = () => { window.removeEventListener('pointerdown', first, true); arm(); };
+    window.addEventListener('pointerdown', first, true);
+    window.addEventListener('popstate', () => { arm(); this.handleBack(); });
+  },
+
+  handleBack() {
+    const cf = document.querySelector('.cf-overlay');
+    if (cf) { cf.remove(); return; }                                  // 確認が出ていたら とじる
+    const sc = this.scene;
+    if (sc === 'bout') { BoutScene.setPaused(!BoutScene.paused); return; }   // 取組中: 一時停止（もう一度で再開）
+    if (sc === 'title' || sc === 'home') {
+      this.confirmBox('ゲームを終了しますか？', '終了する', () => this.exitApp());
+      return;
+    }
+    if (sc === 'create') { this.showScene('title'); return; }
+    const back = document.querySelector('#app .btn-back');
+    if (back) back.click();                                           // 「戻る」ボタンのある画面は、それを押したことにする
+    // 場所の結果・ちゃんこの振り分け・スカウトは、とばせないので何もしない
+  },
+
+  exitApp() {
+    const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (App && App.exitApp) App.exitApp(); else location.href = '../';
   },
 
   showScene(name, data) {
@@ -61,6 +94,7 @@ const Game = {
 
     const scene = sceneMap[name];
     if (!scene) { console.error('Unknown scene:', name); return; }
+    this.scene = name;
 
     const scrollTop = container.scrollTop;
     container.innerHTML = scene.render(data);

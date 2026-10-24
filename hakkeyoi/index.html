@@ -45,6 +45,7 @@
 <canvas id="game" width="840" height="1400"></canvas>
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
+<script src="../back.js"></script>
 <script src="../share.js"></script>
 <script src="../rank.js"></script>
 <script src="../firebase-config.js"></script>
@@ -293,6 +294,8 @@
 
   // 開発用: アドレスの最後に #debug を付けると、状態を読める
   if (location.hash === '#debug') window.__dbg = { get state() { return state; }, get tries() { return tries; }, get goAt() { return goAt; }, get earlyN() { return earlyN; }, get lastMs() { return lastMs; } };
+  // 戻る操作（スワイプ・戻るボタン）: 本番中はポーズ。ふだんは前のページへ
+  HanaBack.init({ isPlaying: () => state === 'wait' || state === 'go' || state === 'hit' || state === 'early', onPause: () => { state = 'title'; } });
   loadImages().then(() => { buildSprites(); requestAnimationFrame(t0 => { last = t0; frame(t0); }); })
     .catch(err => { document.body.textContent = err.message; });
 

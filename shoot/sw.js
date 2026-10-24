@@ -1,7 +1,7 @@
 // オフラインでも遊べるようにキャッシュする。更新したら VERSION を上げる。
 const VERSION = 'shoot-v7';
 const FILES = [
-  './', './index.html', '../share.js', '../rank.js', '../firebase-config.js', './manifest.webmanifest', './core.js', './stages.js',
+  './', './index.html', '../share.js', '../back.js', '../rank.js', '../firebase-config.js', './manifest.webmanifest', './core.js', './stages.js',
   '../parts/body_color.png', '../parts/mawashi.png', '../parts/body_line.png',
   '../parts/normal.png', '../parts/collision.png', '../parts/win.png', '../parts/home.png',
   '../parts/icon-192.png', '../parts/icon-512.png', '../parts/icon-maskable-512.png',

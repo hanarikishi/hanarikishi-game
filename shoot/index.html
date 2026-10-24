@@ -55,6 +55,7 @@
 <canvas id="game" width="1400" height="840"></canvas>
 <a id="toList" href="../">◀ ゲーム一覧</a>
 <div id="rotate"><div class="phone">📱</div><div>スマホを横にしてね</div></div>
+<script src="../back.js"></script>
 <script src="../share.js"></script>
 <script src="../rank.js"></script>
 <script src="../firebase-config.js"></script>
@@ -642,7 +643,17 @@
     button(g, 110, 278, 240, 50, playEndless, (cx, cy) => {
       text(g, 'エンドレス', cx, cy - 7, 20, '#3a2a10', null); text(g, `3回外したら終わり　ベスト ${best}`, cx, cy + 13, 11, '#8a6420', null);
     }, '#ffe08a');
-    shifted(g, ox, () => button(g, W - 60, 10, 46, 40, () => { muted = !muted; try { localStorage.setItem('sumo-shoot-mute', muted ? '1' : '0'); } catch {} }, muted ? '🔇' : '🔊', '#fff', 18));
+    shifted(g, ox, () => button(g, W - 60, 10, 46, 40, () => { muted = !muted; try { localStorage.setItem('sumo-shoot-mute', muted ? '1' : '0'); } catch {} }, (cx, cy) => drawSoundIcon(g, cx, cy, 26, !muted, '#3a2a10'), '#fff', 18));
+  }
+
+  // 音のオン・オフのマーク（「どすこい！はなりきし」と同じ形。オフは×で、うすくする）
+  function drawSoundIcon(g, cx, cy, size, on, color) {
+    const k = size / 40;
+    g.save(); g.translate(cx - size / 2, cy - size / 2); g.scale(k, k);
+    g.globalAlpha *= on ? 1 : 0.45; g.fillStyle = color; g.strokeStyle = color; g.lineWidth = 2.6; g.lineCap = 'round';
+    g.fill(new Path2D('M6 15h7l9-8v26l-9-8H6z'));
+    g.stroke(new Path2D(on ? 'M27 13a9 9 0 0 1 0 14M31 9a14 14 0 0 1 0 22' : 'M27 14l10 12M37 14 27 26'));
+    g.restore();
   }
 
   function draw() {
@@ -665,6 +676,8 @@
   }
   if (location.hash === '#debug') window.DBG = { playStage, playEndless, shoot: v => shoot(v), get s() { return { scene, stage, stageT, ball, shot, balls, score }; } };   // テスト用
   resize();
+  // 戻る操作（スワイプ・戻るボタン）: 本番中はポーズ。ふだんは前のページへ
+  HanaBack.init({ isPlaying: () => scene === 'play' });
   loadImages().then(() => { requestAnimationFrame(frame); })
     .catch(err => { document.body.textContent = err.message; });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
