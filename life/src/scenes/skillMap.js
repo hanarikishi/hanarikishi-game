@@ -63,7 +63,7 @@ const SkillMapScene = {
 
       return `<g class="sk-node ${cls} ${def.isNew ? 'sk-node-new' : ''}" data-id="${def.id}" transform="translate(${pos.x.toFixed(1)},${pos.y.toFixed(1)})" role="button" tabindex="0">
         <circle cx="0" cy="0" r="${R}" class="sk-node-circle" />
-        <text class="sk-node-emoji" dy="0.35em">${def.emoji}</text>
+        <image class="sk-node-emoji" href="${PixelIcon.url(def.emoji)}" x="${(-R * 0.78).toFixed(1)}" y="${(-R * 0.78).toFixed(1)}" width="${(R * 1.56).toFixed(1)}" height="${(R * 1.56).toFixed(1)}" />
         ${maxed ? `<text class="sk-node-check" dy="0.35em">✓</text>` : ''}
       </g>`;
     }).join('');
@@ -75,7 +75,7 @@ const SkillMapScene = {
         <div class="sk-section">
           <div class="section-label">引き継いだスキル（${inherited.length}個・ずっと効く）</div>
           <div class="sk-inherit-list">${inherited.map(({ x, d }) =>
-            `<span class="sk-inherit">${d.emoji} ${d.name}<small>${x.page}枚目</small></span>`).join('')}</div>
+            `<span class="sk-inherit">${PixelIcon.img(d.emoji, 'sk-ic-s')} ${d.name}<small>${x.page}枚目</small></span>`).join('')}</div>
         </div>` : '';
 
     const kanrokuPips = Array.from({ length: kanrokuMax }, (_, i) =>
@@ -246,7 +246,7 @@ const SkillMapScene = {
     const cost   = def.cost(lv);
     const canBuy = !maxed && reqMet && (state.tensei?.tanimachi || 0) >= cost;
 
-    document.getElementById('sp-emoji').textContent = def.emoji;
+    document.getElementById('sp-emoji').innerHTML = PixelIcon.img(def.emoji, 'sp-ic');
     document.getElementById('sp-name').textContent  = def.name;
     document.getElementById('sp-req').textContent   = `解放条件: ${def.reqLabel}`;
     document.getElementById('sp-desc').textContent  = def.desc;

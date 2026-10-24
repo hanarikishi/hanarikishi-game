@@ -202,12 +202,9 @@ button { cursor: pointer; font-family: inherit; border: none; outline: none; }
 }
 
 .title-dohyo { margin: 8px 0 4px; }
-.title-opening { margin: 0; width: min(92vw, 440px); }
-.title-opening video { display: block; width: 100%; height: auto; background: var(--bg); pointer-events: none; opacity: 0; transition: opacity 0.25s; }
-.title-opening video.on { opacity: 1; }
-.title-opening video::-webkit-media-controls,
-.title-opening video::-webkit-media-controls-start-playback-button,
-.title-opening video::-webkit-media-controls-overlay-play-button { display: none !important; -webkit-appearance: none; }
+.title-hanari { margin: 4px 0; width: min(64vw, 280px); }
+.title-hanari img { display: block; width: 100%; height: auto; pointer-events: none; animation: title-hanari-bob 2.4s ease-in-out infinite; }
+@keyframes title-hanari-bob { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-8px) scale(1.02, 0.98); } }
 .title-btns { display: flex; flex-direction: column; align-items: center; gap: 18px; }
 .btn-title-main { width: 280px; font-size: 1.5rem; padding: 20px 0; letter-spacing: 0.3em; }
 .btn-title-sub {
@@ -1026,6 +1023,7 @@ input[type="text"]:focus { border-color: var(--gold); }
 }
 
 .sk-node-emoji {
+  image-rendering: pixelated;
   font-size: 13px;
   text-anchor: middle;
   dominant-baseline: middle;
@@ -1076,6 +1074,9 @@ input[type="text"]:focus { border-color: var(--gold); }
   box-shadow: 0 0 30px rgba(201,162,39,0.3);
 }
 .sp-emoji { font-size: 3rem; line-height: 1; }
+.pxicon { image-rendering: pixelated; display: inline-block; }
+.sp-ic { width: 56px; height: 56px; }
+.sk-ic-s { width: 16px; height: 16px; vertical-align: -3px; }
 .sp-name  { font-size: 1.1rem; font-weight: 700; color: var(--cream); }
 .sp-req   { font-size: 0.65rem; color: var(--muted); }
 .sp-desc  { font-size: 0.8rem; color: #a8b8c8; text-align: center; line-height: 1.4; }

@@ -77,7 +77,7 @@ const SKILL_DEFS_RAW = [
   { ring:1, slot:3,  id:'1_3',  name:'力+1',             emoji:'💪', desc:'初期力+1（転生後も適用）', cost:10,   effect:{chikara:1} },
   { ring:1, slot:4,  id:'1_4',  name:'技+1',             emoji:'🤸', desc:'初期技+1（転生後も適用）', cost:10,   effect:{waza:1} },
   { ring:1, slot:5,  id:'1_5',  name:'おかわり',            emoji:'🍲', desc:'毎場所ちゃんこ+1杯',  cost:15,   effect:{chankoPlus:1} },
-  { ring:1, slot:6,  id:'1_6',  name:'女将',             emoji:'👩‍🍳', desc:'たにまち毎分+1自動増加',  cost:30,   effect:{taniPerMin:1} },
+  { ring:1, slot:6,  id:'1_6',  name:'懸賞+3%',          emoji:'🎀', desc:'懸賞確率+3%',             cost:15,   effect:{winChanko:3} },
 
   // Ring 2 (12ノード)
   { ring:2, slot:0,  id:'2_0',  name:'たにまち+3%',      emoji:'💰', desc:'たにまち獲得量+3%',       cost:20,   effect:{taniPct:3} },
@@ -109,7 +109,7 @@ const SKILL_DEFS_RAW = [
   { ring:3, slot:12, id:'3_12', name:'速さ+3',           emoji:'💨', desc:'初期速さ+3',              cost:35,   effect:{hayasa:3} },
   { ring:3, slot:13, id:'3_13', name:'技+3',             emoji:'🤸', desc:'初期技+3',                cost:40,   effect:{waza:3} },
   { ring:3, slot:14, id:'3_14', name:'力・技・速さの器 −1%',     emoji:'🔨', desc:'力・技・速さを+1するのに要るちゃんこ −1%', cost:60,   effect:{heyaDiscount:1} },
-  { ring:3, slot:15, id:'3_15', name:'懸賞+3%',       emoji:'🎀', desc:'懸賞確率+3%',       cost:40,   effect:{winChanko:3} },
+  { ring:3, slot:15, id:'3_15', name:'女将',             emoji:'👩‍🍳', desc:'たにまち毎分+1自動増加',  cost:60,   effect:{taniPerMin:1} },
   { ring:3, slot:16, id:'3_16', name:'後援者',           emoji:'💴', desc:'たにまち獲得量+20%',      cost:120,  effect:{taniPct:20} },
   { ring:3, slot:17, id:'3_17', name:'オフライン+10%',   emoji:'⏰', desc:'アプリを閉じている間の女将のたにまち+10%',   cost:80,   effect:{offlinePct:10} },
 

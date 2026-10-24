@@ -9,8 +9,8 @@ const TitleScene = {
             <span class="title-dosukoi">どすこい！</span>
             <span class="title-hana">はなりきし</span>
           </h1>
-          <div class="title-opening">
-            <video src="assets/video/opening.mp4" autoplay muted loop playsinline preload="auto" disablepictureinpicture controlslist="nodownload noplaybackrate" tabindex="-1"></video>
+          <div class="title-hanari">
+            <img src="assets/images/home/home1.png" alt="はなりきし" draggable="false">
           </div>
           <div class="title-btns">
             ${localStorage.getItem('hanarikisi_save')
@@ -23,12 +23,6 @@ const TitleScene = {
   },
 
   attach() {
-    // 再生が始まるまで動画は見せない（再生ボタンの絵が一瞬出るのを防ぐ）
-    const v = document.querySelector('.title-opening video');
-    if (v) {
-      v.addEventListener('playing', () => v.classList.add('on'), { once: true });
-      v.play?.().catch(() => {});
-    }
     document.getElementById('btn-continue')?.addEventListener('click', () => {
       Game.loadSave();
       Game.showScene(Game.state ? 'home' : 'create');   // 古い形式のセーブは捨てられるので新しく始める

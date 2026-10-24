@@ -90,15 +90,12 @@ const LookEditor = {
     const cur = look || { ...LOOK_DEFAULT };
     const sw = (arr, key) => arr.map((c, i) =>
       `<button class="lk-sw ${cur && cur[key] === i ? 'on' : ''}" data-k="${key}" data-i="${i}" style="background:${c}" aria-label="${key}${i + 1}"></button>`).join('');
-    const eyes = Array.from({ length: NPC_EYES_COUNT }, (_, i) =>
-      `<button class="lk-eye ${cur && cur.eyes === i ? 'on' : ''}" data-k="eyes" data-i="${i}">目${i + 1}</button>`).join('');
     return `
       <div class="lk-editor">
         <div class="lk-preview">${LookSprite.imgHtml(cur, 'lk-preview-img')}</div>
         <div class="lk-rows">
           <div class="lk-row"><span class="lk-label">肌</span><div class="lk-opts">${sw(NPC_SKIN_COLORS, 'skin')}</div></div>
           <div class="lk-row"><span class="lk-label">まわし</span><div class="lk-opts">${sw(NPC_MAWASHI_COLORS, 'mawashi')}</div></div>
-          <div class="lk-row"><span class="lk-label">目</span><div class="lk-opts">${eyes}</div></div>
         </div>
       </div>`;
   },

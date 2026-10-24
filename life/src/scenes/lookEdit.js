@@ -1,4 +1,4 @@
-// 自分の見た目（目・肌・まわし）を変える（ホームから）
+// 自分の見た目（肌・まわし。目は今は選べない）を変える（ホームから）
 const LookEditScene = {
   render() {
     const r = Game.state.rikishi;
