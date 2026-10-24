@@ -205,6 +205,8 @@ button { cursor: pointer; font-family: inherit; border: none; outline: none; }
 .title-hanari { margin: 4px 0; width: min(64vw, 280px); }
 .title-hanari img { display: block; width: 100%; height: auto; pointer-events: none; animation: title-hanari-bob 2.4s ease-in-out infinite; }
 @keyframes title-hanari-bob { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-8px) scale(1.02, 0.98); } }
+.title-back { display: block; margin-top: 14px; font-size: 0.8rem; letter-spacing: 0.15em; color: var(--muted); text-decoration: none; text-align: center; }
+.title-back:active { opacity: 0.6; }
 .title-btns { display: flex; flex-direction: column; align-items: center; gap: 18px; }
 .btn-title-main { width: 280px; font-size: 1.5rem; padding: 20px 0; letter-spacing: 0.3em; }
 .btn-title-sub {

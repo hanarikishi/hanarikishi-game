@@ -18,6 +18,7 @@ const TitleScene = {
                  <button class="btn-title-sub" id="btn-start">はじめから</button>`
               : '<button class="btn-primary btn-title-main" id="btn-start">はじめる</button>'}
           </div>
+          ${window.Capacitor ? '' : '<a class="title-back" href="../">◀ ゲーム一覧へ</a>'}
         </div>
       </div>`;
   },
