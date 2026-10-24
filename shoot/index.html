@@ -53,6 +53,8 @@
 <a id="toList" href="../">◀ ゲーム一覧</a>
 <div id="rotate"><div class="phone">📱</div><div>スマホを横にしてね</div></div>
 <script src="../share.js"></script>
+<script src="../rank.js"></script>
+<script src="../firebase-config.js"></script>
 <script src="core.js"></script>
 <script src="stages.js"></script>
 <script>
@@ -195,7 +197,7 @@
           dy: dyy, period: n >= 12 ? 3.2 : 0 } };
       if (n >= 8 && Math.random() < 0.6) { const cy = Math.round(st.ceil + 40 + Math.random() * 40); st.walls.push([220, cy, hx - 60, cy, 'w']); }
       if (n >= 16 && Math.random() < 0.7) { const px = 260 + Math.random() * 160, py = 150 + Math.random() * 110, an = (Math.random() - 0.5) * 1.2, l = 50; st.walls.push([Math.round(px - Math.cos(an) * l), Math.round(py - Math.sin(an) * l), Math.round(px + Math.cos(an) * l), Math.round(py + Math.sin(an) * l), 'w']); }
-      if (n >= 24) for (let k = 0; k < 3; k++) { const x = 220 + Math.random() * 320, y = 80 + Math.random() * 250; if (Math.hypot(x - hx, y - st.hoop.y) > 70) st.pegs.push([Math.round(x), Math.round(y), 9]); }
+      if (n >= 24) for (let k = 0; k < 3; k++) { const x = 220 + Math.random() * 320, y = 80 + Math.random() * 250; if (Math.hypot(x - hx, y - st.hoop.y) > 70) { const an = Math.random() * Math.PI, l = 16 + Math.random() * 8; st.walls.push([Math.round(x - Math.cos(an) * l), Math.round(y - Math.sin(an) * l), Math.round(x + Math.cos(an) * l), Math.round(y + Math.sin(an) * l), 'w']); } }
       if (tries > 30 || solvable(st)) return st;
     }
   }
@@ -305,6 +307,7 @@
     t += dt;
     toList.hidden = !(scene === 'title' || scene === 'select' || scene === 'over' || scene === 'rules');
     HanaShare.update(scene === 'over' || (scene === 'clear' && mode === 'stage'), scene === 'over' ? `はなりきしシュートで ${score}点！` : `はなりきしシュートの ${Math.floor(stageNo / PER) + 1}-${stageNo % PER + 1} をクリア！ ★${starsGot}`);
+    HanaRank.update(scene === 'over', score);
     if (scene !== 'play' && scene !== 'clear' && scene !== 'fail' && scene !== 'over') return;
     endT += dt;
     stageT += dt;
@@ -394,9 +397,15 @@
     g.lineCap = 'round';
     for (const [x1, y1, x2, y2, type] of stage.walls) {
       const line = (c, w, oy = 0) => { g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1 + oy); g.lineTo(x2, y2 + oy); g.stroke(); };
-      if (type === 'z') {
-        line('#5a1400', C.WALL_T * 2 + 6); line('#ff7a2f', C.WALL_T * 2 + 2); line('#ffb27a', 3, -2.5);
-        g.setLineDash([5, 9]); line('rgba(255,255,255,.85)', 2.5); g.setLineDash([]);
+      if (type === 'z') {   // トランポリン: 赤い枠・黒いマット・下にバネと脚
+        const L = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / L, uy = (y2 - y1) / L;
+        g.strokeStyle = '#7d8aa8'; g.lineWidth = 2;
+        for (let d = 8; d < L - 4; d += 11) {   // バネ
+          const px = x1 + ux * d, py = y1 + uy * d + 6;
+          g.beginPath(); g.moveTo(px, py); g.lineTo(px - 3, py + 3); g.lineTo(px + 3, py + 6); g.lineTo(px - 3, py + 9); g.lineTo(px, py + 11); g.stroke();
+        }
+        for (const [lx, ly] of [[x1, y1], [x2, y2]]) { g.strokeStyle = '#2b3350'; g.lineWidth = 4; g.beginPath(); g.moveTo(lx, ly + 4); g.lineTo(lx, Math.min(C.FLOOR, ly + 16)); g.stroke(); }
+        line('#3a0a06', C.WALL_T * 2 + 7); line('#e0402f', C.WALL_T * 2 + 3); line('#1c2038', C.WALL_T * 2 - 3); line('rgba(255,170,150,.9)', 1.6, -C.WALL_T);
       } else {
         line('#121a30', C.WALL_T * 2 + 4); line('#6f86a8', C.WALL_T * 2); line('#c9d8ee', 2, -3);
         g.setLineDash([10, 10]); line('rgba(255,193,7,.8)', 2); g.setLineDash([]);
@@ -497,8 +506,7 @@
     g.save(); g.translate(-ox, 0);          // 左の表示は画面の左はしへ
     rrect(g, 8, 8, 150, 46, 12); g.fillStyle = 'rgba(0,0,0,.4)'; g.fill();
     if (mode === 'stage') {
-      text(g, `${Math.floor(stageNo / PER) + 1}-${stageNo % PER + 1}`, 20, 24, 18, '#fff', null, 'left');
-      text(g, CHAPTERS[stage.chapter], 20, 43, 11, '#ffe082', null, 'left');
+      text(g, `${Math.floor(stageNo / PER) + 1}-${stageNo % PER + 1}`, 20, 31, 24, '#fff', null, 'left');
     } else {
       text(g, String(score), 44, 31, 26, '#fff', null);
       text(g, '点', 84, 36, 12, '#ffe082', null);
@@ -598,7 +606,7 @@
   function drawSelect(g) {
     drawBg(g);
     g.fillStyle = 'rgba(15,8,25,.55)'; fullRect(g);
-    text(g, `第${page + 1}章　${CHAPTERS[page]}`, W / 2, 34, 22, '#ffe082');
+    text(g, `第${page + 1}章`, W / 2, 34, 22, '#ffe082');
     text(g, `★ ${totalStars()} / ${STAGES.length * 3}`, W / 2, 60, 14, '#fff');
     const COLS = Math.ceil(PER / 2), gx = 350 - (COLS * 100 - 18) / 2;
     for (let k = 0; k < PER; k++) {

@@ -46,6 +46,8 @@
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
 <script src="../share.js"></script>
+<script src="../rank.js"></script>
+<script src="../firebase-config.js"></script>
 <script>
 (() => {
   'use strict';
@@ -810,6 +812,7 @@
   function frame(t) {
     toList.hidden = !(state !== 'play');
     HanaShare.update(state === 'over', `はなりきしクロッシーで ${score}歩すすんだ！`);
+    HanaRank.update(state === 'over', score);
     const dt = Math.min(0.033, (t - last) / 1000 || 0);
     last = t;
     update(dt);

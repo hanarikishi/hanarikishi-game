@@ -46,12 +46,15 @@
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
 <script src="../share.js"></script>
+<script src="../rank.js"></script>
+<script src="../firebase-config.js"></script>
 <script>
 (() => {
   'use strict';
   const toList = document.getElementById('toList');
   const W = 420, H = 700;
   const BEST_KEY = 'sumo-breakout-best';
+  const SAVE_KEY = 'sumo-breakout-save';   // つづきから（その面のはじめの 面・点数）
 
   // 力士の色は最初から横綱
   const RANKS = [{ name: '横綱', body: '#ffee00', belt: '#1f5c00' }];
@@ -148,6 +151,9 @@
   let state, score, best, t = 0, level, lives, bricks, balls, pad, parts, shake, hitT, msg, toast, boost, kills;
   let caps, bolts, fx;   // カプセル、レーザー弾、効果の残り時間
   try { best = +localStorage.getItem(BEST_KEY) || 0; } catch { best = 0; }
+  let saved = null, atStart = true, roundStart = { level: 1, score: 0 };
+  try { const o = JSON.parse(localStorage.getItem(SAVE_KEY)); if (o && o.level >= 1) saved = { level: Math.floor(o.level), score: Math.max(0, Math.floor(o.score) || 0) }; } catch {}
+  function persist() { saved = { ...roundStart }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(saved)); } catch {} }
 
   const baseSpeed = () => Math.min(250 + (level - 1) * 14, 400);
   const spd = () => (baseSpeed() + boost) * (fx.slow > 0 ? 0.7 : 1);
@@ -165,12 +171,16 @@
     state = 'ready'; boost = 0; clearFx();
     balls = [{ x: pad.x, y: PAD_Y - BALL_R, vx: 0, vy: 0, rot: 0, stuck: true, off: 0, chain: 0 }];
   }
-  function reset() {
-    score = 0; level = 1; lives = 3; parts = []; shake = 0; hitT = 0; msg = 1.6; toast = { s: '', t: 0 }; kills = 0;
+  function reset(fromSave) {
+    const f = fromSave && saved && saved.level > 1 ? saved : { level: 1, score: 0 };
+    score = f.score; level = f.level; lives = 3; atStart = true; roundStart = { level, score };
+    if (!(fromSave && saved && saved.level > 1)) persist();
+    parts = []; shake = 0; hitT = 0; msg = 1.6; toast = { s: '', t: 0 }; kills = 0;
     pad = { x: W / 2, w: 80 };
     clearFx(); buildLevel(); ready();
   }
   function release() {
+    atStart = false;
     let any = false;
     for (const b of balls) if (b.stuck) {
       const k = Math.max(-1, Math.min(1, b.off / (pad.w / 2))), a = (-90 + k * 50 + (Math.abs(k) < .1 ? Math.random() * 30 - 15 : 0)) * Math.PI / 180;
@@ -182,6 +192,7 @@
   function gameOver() {
     state = 'over'; beep(180, 0.5, 'sawtooth', 0.06, -120);
     if (score > best) { best = score; try { localStorage.setItem(BEST_KEY, best); } catch {} }
+    persist();   // ここまでの面は覚えておく
   }
   function pop(b) {
     const col = COLORS[b.ch].c;
@@ -213,7 +224,7 @@
     if (k === 'P') lives = Math.min(5, lives + 1);
   }
   function tap() {
-    if (state === 'over') return reset();
+    if (state === 'over') return reset(true);
     if (balls.some(b => b.stuck)) release();
   }
 
@@ -322,10 +333,18 @@
       if (lives <= 0) gameOver(); else ready();
     } else if (bricks.every(b => b.hp <= 0 || b.ch === 'd')) {
       level++; msg = 1.6; beep(880, 0.3, 'triangle', 0.06, 440);
+      roundStart = { level, score }; persist();
       buildLevel(); ready();
     }
   }
 
+  // 「はじめから」: つづきがあるとき、最初の画面とゲームオーバーの画面に出す
+  const RB = { x: W / 2 - 78, y: 505, w: 156, h: 38 };
+  const restartBtnOn = () => (state === 'over' || (state === 'ready' && atStart)) && saved && saved.level > 1;
+  function drawRestartBtn(g) {
+    rrect(g, RB.x, RB.y, RB.w, RB.h, 10); g.fillStyle = 'rgba(0,0,0,.55)'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#9fb0c8'; g.stroke();
+    text(g, 'はじめから', W / 2, RB.y + RB.h / 2 + 1, 18, '#fff', null);
+  }
   function text(g, s, x, y, size, color = '#fff', stroke = '#000', align = 'center') {
     g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`; g.textAlign = align; g.textBaseline = 'middle';
     g.lineJoin = 'round'; g.lineWidth = size / 5; g.strokeStyle = stroke; g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
@@ -422,6 +441,7 @@
     g.restore();
 
     if (state === 'ready') text(g, 'タップで 発射', W / 2, 560, 22, '#9dffb0');
+    if (restartBtnOn()) drawRestartBtn(g);
     if (msg > 0) text(g, `ROUND ${level}`, W / 2, 440, 38, '#fff', '#222');
     if (toast.t > 0) text(g, toast.s, W / 2, 500, 20, '#ffe066', '#000');
     if (state === 'over') {
@@ -429,7 +449,7 @@
       g.drawImage(IMG.home, W / 2 - 100, 130, 200, 200);
       text(g, 'GAME OVER', W / 2, 360, 38, '#fff', '#c01818');
       text(g, `${score} 点  ベスト ${best}`, W / 2, 415, 22, '#fff', '#000');
-      text(g, 'タップで もういちど', W / 2, 480, 22, '#9dffb0', '#000');
+      text(g, saved && saved.level > 1 ? `タップで つづきから（ROUND ${saved.level}）` : 'タップで もういちど', W / 2, 480, 20, '#9dffb0', '#000');
     }
   }
 
@@ -437,6 +457,7 @@
   function frame(now) {
     toList.hidden = state === 'play';
     HanaShare.update(state === 'over', `はなりきしブロック崩しで ${score}点！`);
+    HanaRank.update(state === 'over', score);
     const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
     update(dt); draw(); requestAnimationFrame(frame);
   }
@@ -446,6 +467,8 @@
     e.preventDefault();
     if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch {} }
     if (ac && ac.state === 'suspended') ac.resume();
+    const rc = cv.getBoundingClientRect(), gx = (e.clientX - rc.left) / rc.width * W, gy = (e.clientY - rc.top) / rc.height * H;
+    if (restartBtnOn() && gx >= RB.x && gx <= RB.x + RB.w && gy >= RB.y && gy <= RB.y + RB.h) { saved = null; reset(false); return; }
     if (state !== 'over') movePad(e); tap();
   });
   cv.addEventListener('pointermove', e => { if (state !== 'over') movePad(e); });
@@ -460,7 +483,7 @@
     if (d && pad && state !== 'over') pad.x = clampPad(pad.x + d * 9);
   }, 16);
 
-  loadImages().then(() => { buildSprites(); reset(); requestAnimationFrame(frame); })
+  loadImages().then(() => { buildSprites(); reset(true); requestAnimationFrame(frame); })
     .catch(err => { document.body.textContent = err.message; });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();

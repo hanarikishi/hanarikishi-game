@@ -1,7 +1,7 @@
 // オフラインでも遊べるようにキャッシュする。更新したら VERSION を上げる。
 const VERSION = 'crossy-v5';
 const FILES = [
-  './', './index.html', '../share.js', './manifest.webmanifest',
+  './', './index.html', '../share.js', '../rank.js', '../firebase-config.js', './manifest.webmanifest',
   '../parts/body_color.png', '../parts/mawashi.png', '../parts/body_line.png',
   '../parts/normal.png', '../parts/collision.png',
   '../parts/win.png', '../parts/home.png',

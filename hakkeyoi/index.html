@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>はなりきし はっけよい！</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="はなりきしゲームズ">
+<meta property="og:title" content="はなりきし はっけよい！">
+<meta property="og:description" content="合図でタップ。5回の平均反応速度で番付が決まる、立ち合い反射神経テスト">
+<meta property="og:url" content="https://hanarikishi.github.io/hanarikishi-game/hakkeyoi/">
+<meta property="og:image" content="https://hanarikishi.github.io/hanarikishi-game/thumbs/hakkeyoi.jpg">
+<meta name="twitter:card" content="summary">
+<meta name="description" content="合図でタップ。5回の平均反応速度で番付が決まる、立ち合い反射神経テスト">
+<link rel="icon" href="../parts/icon-192.png">
+<link rel="apple-touch-icon" href="../parts/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2a2548">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #1a1530; display: flex; justify-content: center; align-items: center;
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    -webkit-user-select: none; user-select: none; touch-action: none;
+  }
+  canvas {
+    display: block; height: min(100dvh, calc(100vw * 700 / 420)); aspect-ratio: 420 / 700;
+    box-shadow: 0 0 30px rgba(0, 0, 0, .5); touch-action: none; cursor: pointer;
+  }
+  /* ゲーム一覧へ戻るボタン（遊んでいないときだけ、画面の左下に出す） */
+  #toList {
+    position: fixed; z-index: 5; text-decoration: none;
+    left: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px);
+    bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 10px);
+    padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10;
+    background: rgba(255, 248, 220, .94); color: #3a2a10; font-weight: bold; font-size: 14px;
+  }
+  #toList[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="840" height="1400"></canvas>
+<a id="toList" href="../">◀ ゲーム一覧</a>
+
+<script src="../share.js"></script>
+<script src="../rank.js"></script>
+<script src="../firebase-config.js"></script>
+<script>
+(() => {
+  'use strict';
+  const toList = document.getElementById('toList');
+  const W = 420, H = 700;
+  const TRIES = 5;                 // 1回の勝負は5回の平均
+  const BEST_KEY = 'sumo-hakkeyoi-best';
+  const EARLY_MS = 90;             // これより速いのは「お手つき」あつかい（人にはむり）
+
+  // 番付（5回の平均の反応速度）
+  const RANKS = [
+    { name: '横綱',   max: 170, body: '#ffee00', belt: '#1f5c00', msg: '神速！ 目にも止まらぬ立ち合い' },
+    { name: '大関',   max: 195, body: '#ff9a3c', belt: '#14507a', msg: 'ほぼ プロ級の反応' },
+    { name: '関脇',   max: 220, body: '#b9e3d3', belt: '#7a4a00', msg: 'かなり はやい！' },
+    { name: '小結',   max: 245, body: '#ffb3a1', belt: '#b71c1c', msg: '平均より ずっと上' },
+    { name: '前頭',   max: 270, body: '#dcc4f2', belt: '#6a1b9a', msg: 'じゅうぶん はやい' },
+    { name: '十両',   max: 300, body: '#ffd699', belt: '#e65100', msg: 'ふつうに はやい' },
+    { name: '幕下',   max: 340, body: '#f8cfe0', belt: '#111111', msg: 'ふつう。あと一歩' },
+    { name: '三段目', max: 390, body: '#c9eaa5', belt: '#111111', msg: 'ちょっと のんびり' },
+    { name: '序二段', max: 450, body: '#bfe4f6', belt: '#111111', msg: '目を ひらいて！' },
+    { name: '序の口', max: 540, body: '#f7e3bd', belt: '#111111', msg: 'ねむそう…？' },
+    { name: '前相撲', max: 1e9, body: '#f1efe8', belt: '#111111', msg: 'まだ 土俵に あがる前' },
+  ];
+  const rankOf = ms => RANKS.findIndex(r => ms < r.max);
+
+  // ---- 画像 ----
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win'];
+  const IMG = {};
+  const CX = 513, CY = 538, BODY_R = 395;
+  const loadImages = () => Promise.all(SRC.map(n => new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => { IMG[n] = i; res(); }; i.onerror = () => rej(new Error('画像を読み込めません: ' + n)); i.src = `../parts/${n}.png`;
+  })));
+  const tint = (img, color) => {
+    const c = document.createElement('canvas'); c.width = c.height = 1024;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, 1024, 1024); return c;
+  };
+  const R = 50, DPR = 2, sprites = [];
+  function buildSprites() {
+    const size = Math.ceil(1024 * R / BODY_R * DPR);
+    RANKS.forEach(rk => {
+      const bodyT = tint(IMG.body_color, rk.body), beltT = tint(IMG.mawashi, rk.belt), faces = {};
+      for (const face of ['normal', 'hit', 'win']) {
+        const c = document.createElement('canvas'); c.width = c.height = size;
+        const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+        const d = im => g.drawImage(im, 0, 0, size, size);
+        d(bodyT); d(beltT); d(IMG.body_line); d(face === 'normal' ? IMG.normal : face === 'hit' ? IMG.collision : IMG.win);
+        faces[face] = c;
+      }
+      sprites.push(faces);
+    });
+  }
+  // 足元(x, y)に立たせて描く。flip=-1 で左向き
+  function drawSumo(g, lv, face, x, y, sx = 1, sy = 1, flip = 1, rot = 0) {
+    const cv = sprites[lv][face], k = R / BODY_R;
+    g.save(); g.translate(x, y); g.rotate(rot); g.scale(sx * flip, sy);
+    g.drawImage(cv, -CX * k, -CY * k - R * 0.95, cv.width / DPR, cv.height / DPR);
+    g.restore();
+  }
+
+  // ---- 音 ----
+  let ac = null;
+  const beep = (f, d = 0.1, type = 'square', vol = 0.06, slide = 0) => {
+    if (!ac) return;
+    try {
+      const o = ac.createOscillator(), v = ac.createGain(), n = ac.currentTime;
+      o.type = type; o.frequency.setValueAtTime(f, n); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, f + slide), n + d);
+      v.gain.setValueAtTime(vol, n); v.gain.exponentialRampToValueAtTime(0.0001, n + d);
+      o.connect(v); v.connect(ac.destination); o.start(n); o.stop(n + d);
+    } catch {}
+  };
+
+  // ---- 状態 ----
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+  // title → wait（見合って）→ go（合図）→ hit（結果）/ early（お手つき）→ …（5回）→ final
+  let state = 'title', t = 0, stT = 0, tries = [], waitLen = 2, goAt = 0, oppMs = 0, flash = 0, earlyN = 0, lastMs = 0, won = false, lv = RANKS.length - 1, finalRank = 0;
+  const avg = () => tries.reduce((a, b) => a + b, 0) / (tries.length || 1);
+  function newRun() { tries = []; earlyN = 0; lv = RANKS.length - 1; toWait(); }
+  function toWait() { state = 'wait'; stT = 0; waitLen = 1.3 + Math.random() * 2.7; }
+  function tap(ts) {
+    if (state === 'title') return newRun();
+    if (state === 'final') { if (stT > 0.7) newRun(); return; }
+    if (state === 'wait') { state = 'early'; stT = 0; earlyN++; beep(160, 0.35, 'sawtooth', 0.07, -80); return; }
+    if (state === 'go') {
+      const ms = ts - goAt;
+      if (ms < EARLY_MS) { state = 'early'; stT = 0; earlyN++; beep(160, 0.35, 'sawtooth', 0.07, -80); return; }
+      lastMs = Math.round(ms); tries.push(lastMs); oppMs = 170 + Math.random() * 130; won = lastMs < oppMs;
+      state = 'hit'; stT = 0; beep(won ? 520 : 260, 0.18, 'triangle', 0.07, won ? 300 : -100);
+    }
+  }
+  function update(dt) {
+    t += dt; stT += dt; flash = Math.max(0, flash - dt * 3);
+    if (state === 'wait' && stT >= waitLen) { state = 'go'; stT = 0; goAt = -1; }
+    if (state === 'early' && stT > 1.3) toWait();
+    if (state === 'hit' && stT > 1.4) {
+      if (tries.length >= TRIES) {
+        state = 'final'; stT = 0; finalRank = rankOf(avg()); lv = finalRank; beep(784, 0.3, 'triangle', 0.07, 400);
+        try { const b = +localStorage.getItem(BEST_KEY) || 0, a = Math.round(avg()); if (!b || a < b) localStorage.setItem(BEST_KEY, a); } catch {}   // 一覧ページに出す ベスト（平均の最短）
+      } else toWait();
+    }
+  }
+
+  // ---- 描画 ----
+  function text(g, s, x, y, size, color = '#fff', stroke = '#000', align = 'center') {
+    g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`; g.textAlign = align; g.textBaseline = 'middle';
+    if (stroke) { g.lineJoin = 'round'; g.lineWidth = size / 4.5; g.strokeStyle = stroke; g.strokeText(s, x, y); }
+    g.fillStyle = color; g.fillText(s, x, y);
+  }
+  const GY = 470;   // 土俵の足元の高さ
+  // 背景は動かないので、最初に1枚の絵に描いておく
+  let BGC = null;
+  function drawBg(g) {
+    if (!BGC) { BGC = document.createElement('canvas'); BGC.width = W * 2; BGC.height = H * 2; const bg = BGC.getContext('2d'); bg.scale(2, 2); paintBg(bg); }
+    g.drawImage(BGC, 0, 0, W, H);
+  }
+  function paintBg(g) {
+    const sky = g.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#2a2548'); sky.addColorStop(0.55, '#6a4a7a'); sky.addColorStop(1, '#a8708a');
+    g.fillStyle = sky; g.fillRect(0, 0, W, H);
+    // 吊り屋根と房
+    g.fillStyle = 'rgba(20,16,40,.7)'; g.beginPath(); g.moveTo(0, 0); g.lineTo(W, 0); g.lineTo(W, 70); g.lineTo(W * 0.85, 120); g.lineTo(W * 0.15, 120); g.lineTo(0, 70); g.closePath(); g.fill();
+    for (const [x, y, c] of [[48, 110, '#5f87c7'], [88, 130, '#ffffff'], [W - 88, 130, '#d8575a'], [W - 48, 110, '#555566']]) {
+      g.strokeStyle = '#c8b070'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y - 20); g.lineTo(x, y); g.stroke();
+      g.fillStyle = c; g.beginPath(); g.moveTo(x - 5, y); g.lineTo(x + 5, y); g.lineTo(x + 8, y + 52); g.lineTo(x - 8, y + 52); g.closePath(); g.fill();
+    }
+    // お客さん
+    for (let r = 0; r < 4; r++) for (let i = 0; i < 16; i++) {
+      const x = i * 28 + (r % 2) * 14 + 6, y = 175 + r * 34;
+      g.fillStyle = ['#e8b0b8', '#b8c8e8', '#c8e0b0', '#f0dca0', '#d0c0e8'][(i * 3 + r) % 5]; g.globalAlpha = 0.55;
+      g.beginPath(); g.ellipse(x, y + 12, 11, 9, 0, 0, 7); g.fill();
+      g.fillStyle = ['#f2d6bd', '#e8c3a3', '#9a9aa8', '#5c5c6c'][(i + r * 2) % 4]; g.beginPath(); g.arc(x, y, 6, 0, 7); g.fill(); g.globalAlpha = 1;
+    }
+    // 土俵
+    g.fillStyle = '#7a5a3a'; g.fillRect(0, GY - 40, W, H - GY + 40);
+    g.fillStyle = '#c8956c'; g.beginPath(); g.ellipse(W / 2, GY + 8, 205, 74, 0, 0, 7); g.fill();
+    g.strokeStyle = '#5c3d1e'; g.lineWidth = 6; g.stroke();
+    g.strokeStyle = '#f3e7c8'; g.lineWidth = 3; g.beginPath(); g.moveTo(W / 2 - 52, GY + 14); g.lineTo(W / 2 - 52, GY - 10); g.moveTo(W / 2 + 52, GY + 14); g.lineTo(W / 2 + 52, GY - 10); g.stroke();   // 仕切り線
+  }
+  function draw() {
+    const g = ctx;
+    drawBg(g);
+    const pl = lv, op = (lv + 4) % RANKS.length;
+    let px = 130, ox = 290, psx = 1, psy = 1, osx = 1, osy = 1, pface = 'normal', oface = 'normal', prot = 0, orot = 0;
+    const br = Math.sin(t * 3) * 0.015;
+    if (state === 'wait' || state === 'title' || state === 'early') { psy = osy = 0.9 + br; psx = osx = 1.03 - br; }   // しこって かまえている
+    if (state === 'go') {
+      // 合図: 相手は、すこし おくれて とびだす
+      const pt = stT; osy = 0.9; psy = 0.9;
+      if (pt > oppMsPreview()) ox -= Math.min(60, (pt - oppMsPreview()) * 700);
+    }
+    if (state === 'hit') {
+      const k = Math.min(1, stT / 0.12), push = Math.min(1, stT / 0.5);
+      px = 130 + 70 * k; ox = 290 - 60 * (won ? 0 : k);
+      if (won) { ox = 290 + 36 * push; oface = 'hit'; pface = 'win'; orot = 0.4 * push; psy = 1.05; }
+      else { px = 130 - 26 * push; pface = 'hit'; oface = 'win'; prot = -0.4 * push; }
+    }
+    if (state === 'early') { pface = 'hit'; prot = Math.sin(stT * 30) * 0.08; }
+    if (state === 'final') { pface = finalRank <= 5 ? 'win' : 'normal'; psy = 1 + Math.abs(Math.sin(t * 6)) * 0.04; }
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(px, GY + 6, 40, 9, 0, 0, 7); g.fill(); g.beginPath(); g.ellipse(ox, GY + 6, 40, 9, 0, 0, 7); g.fill();
+    drawSumo(g, pl, pface, px, GY, psx, psy, 1, prot);
+    if (state !== 'final') drawSumo(g, op, oface, ox, GY, osx, osy, -1, orot);
+
+    // 上の表示: 5回ぶんの記録
+    if (state !== 'title' && state !== 'final') {
+      for (let i = 0; i < TRIES; i++) {
+        const x = W / 2 + (i - 2) * 62, done = i < tries.length;
+        g.fillStyle = done ? '#ffd24a' : 'rgba(255,255,255,.18)'; g.beginPath(); g.arc(x, 44, 22, 0, 7); g.fill(); g.strokeStyle = '#3a2a10'; g.lineWidth = 3; g.stroke();
+        text(g, done ? String(tries[i]) : String(i + 1), x, 44, done ? 14 : 18, done ? '#3a2a10' : '#fff', null);
+      }
+    }
+
+    // 中央の文字
+    if (state === 'title') {
+      text(g, 'はなりきし', W / 2, 218, 30, '#ffe082', '#2a1040');
+      text(g, 'はっけよい！', W / 2, 272, 52, '#fff', '#8a1c10');
+      text(g, '合図が 出たら すぐ タップ', W / 2, 326, 18, '#fff', '#2a1040');
+      text(g, `${TRIES}回の 平均で 番付が きまる`, W / 2, 352, 16, '#ffe9b0', '#2a1040');
+      const b = window.HanaRank && HanaRank.myBest('d');
+      if (b !== undefined) text(g, `今日のベスト ${Math.round(b)}ms`, W / 2, 560, 16, '#9dffb0', '#102a10');
+      g.globalAlpha = 0.6 + 0.4 * Math.sin(t * 4); text(g, 'タップで はじめる', W / 2, 610, 24, '#9dffb0', '#102a10'); g.globalAlpha = 1;
+    }
+    if (state === 'wait') {
+      g.globalAlpha = 0.7 + 0.3 * Math.sin(t * 5); text(g, '見合って…', W / 2, 330, 44, '#fff', '#2a1040'); g.globalAlpha = 1;
+      text(g, '合図まで 動かない！', W / 2, 600, 18, 'rgba(255,255,255,.8)', '#2a1040');
+    }
+    if (state === 'early') {
+      text(g, 'お手つき！', W / 2, 320, 48, '#ffb0a0', '#5a0a00');
+      text(g, 'まって！ 合図は まだ', W / 2, 372, 18, '#fff', '#2a1040');
+    }
+    if (state === 'go') {
+      g.fillStyle = `rgba(255,255,255,${flash})`; g.fillRect(0, 0, W, H);
+      text(g, 'はっけよい！', W / 2, 310, 56, '#fff3a0', '#c0200a');
+      text(g, 'いま タップ！', W / 2, 372, 24, '#fff', '#c0200a');
+    }
+    if (state === 'hit') {
+      text(g, `${lastMs} ms`, W / 2, 300, 64, '#ffe27a', '#3a1a00');
+      text(g, won ? '勝ち！ 相手より はやい' : `負け… 相手は ${Math.round(oppMs)}ms`, W / 2, 360, 20, won ? '#9dffb0' : '#ffb0a0', '#2a1040');
+      if (tries.length >= TRIES) text(g, 'けっか はっぴょう…', W / 2, 600, 18, '#fff', '#2a1040');
+    }
+    if (state === 'final') {
+      g.fillStyle = 'rgba(30,18,50,.78)'; g.fillRect(0, 0, W, H);
+      const a = Math.min(1, stT / 0.5); g.globalAlpha = a;
+      const rk = RANKS[finalRank], av = Math.round(avg()), best = Math.min(...tries);
+      text(g, `${TRIES}回の 平均`, W / 2, 80, 20, '#fff', '#2a1040');
+      text(g, `${av} ms`, W / 2, 150, 72, '#ffe27a', '#3a1a00');
+      drawSumo(g, finalRank, finalRank <= 5 ? 'win' : 'normal', W / 2, 372, 1.35, 1.35 + Math.abs(Math.sin(t * 6)) * 0.05);
+      text(g, `番付  ${rk.name}`, W / 2, 418, 40, '#fff', '#8a1c10');
+      text(g, rk.msg, W / 2, 458, 17, '#ffe9b0', '#2a1040');
+      text(g, tries.map(x => x + '').join('  '), W / 2, 494, 15, '#cfd6ff', '#2a1040');
+      text(g, `最速 ${best}ms` + (earlyN ? `　お手つき ${earlyN}回` : ''), W / 2, 518, 15, '#cfd6ff', '#2a1040');
+      const b = window.HanaRank && HanaRank.myBest('d');
+      if (b !== undefined) text(g, `今日のベスト ${Math.round(b)}ms`, W / 2, 548, 16, '#9dffb0', '#102a10');
+      if (stT > 0.7) { g.globalAlpha = 0.6 + 0.4 * Math.sin(t * 4); text(g, 'タップで もういちど', W / 2, 590, 22, '#9dffb0', '#102a10'); }
+      g.globalAlpha = 1;
+    }
+  }
+  const oppMsPreview = () => (oppMs || 220) / 1000;
+
+  // 合図が画面に出た瞬間を、反応速度のスタートにする
+  let last = 0, armed = false;
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
+    const was = state;
+    update(dt);
+    if (state === 'go' && was !== 'go') { flash = 0.5; oppMs = 170 + Math.random() * 130; armed = true; }
+    draw();
+    if (armed && state === 'go') { goAt = performance.now(); armed = false; beep(880, 0.12, 'square', 0.07); }
+    const showEnd = state === 'final' && stT > 0.4, avgMs = Math.round(avg());
+    toList.hidden = !(state === 'title' || state === 'final');
+    const rk = RANKS[finalRank] || RANKS[0];
+    HanaShare.update(showEnd, `はなりきし はっけよい！ 平均 ${avgMs}ms【${rk.name}】（最速 ${tries.length ? Math.min(...tries) : 0}ms）`);
+    HanaRank.update(showEnd, avgMs);
+    requestAnimationFrame(frame);
+  }
+  cv.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch {} }
+    if (ac && ac.state === 'suspended') ac.resume();
+    tap(e.timeStamp);
+  });
+  window.addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); if (!e.repeat) tap(performance.now()); } });
+
+  // 開発用: アドレスの最後に #debug を付けると、状態を読める
+  if (location.hash === '#debug') window.__dbg = { get state() { return state; }, get tries() { return tries; }, get goAt() { return goAt; }, get earlyN() { return earlyN; }, get lastMs() { return lastMs; } };
+  loadImages().then(() => { buildSprites(); requestAnimationFrame(t0 => { last = t0; frame(t0); }); })
+    .catch(err => { document.body.textContent = err.message; });
+
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>

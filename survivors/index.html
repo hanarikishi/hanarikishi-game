@@ -46,6 +46,8 @@
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
 <script src="../share.js"></script>
+<script src="../rank.js"></script>
+<script src="../firebase-config.js"></script>
 <script>
 (() => {
   'use strict';
@@ -1434,6 +1436,7 @@
   function frame(t) {
     toList.hidden = !(state === 'title' || state === 'over' || state === 'win' || state === 'pause');
     HanaShare.update(state === 'over' || state === 'win', `はなりきしサバイバーズで ${state === 'win' ? '生き残った！' : fmt(gt) + ' 生き残り、'}撃破${kills}体！`);
+    HanaRank.update(state === 'over' || state === 'win', Math.floor(gt));
     const raw = (t - last) / 1000 || 0;
     const dt = Math.min(0.033, raw);
     last = t;

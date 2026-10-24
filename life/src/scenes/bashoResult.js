@@ -75,6 +75,7 @@ const BashoResultScene = {
         <div class="career-info">通算 ${r.careerWins}勝${r.careerLosses}敗 ｜ たにまち ${formatNum(t.tanimachi || 0)}</div>
 
         <button class="btn-primary btn-large" id="btn-next-season">ちゃんこを振り分ける</button>
+        ${window.Capacitor ? '' : '<button class="btn-share-x" id="btn-share-x">𝕏 でシェア</button>'}
       </div>`;
   },
 
@@ -83,6 +84,15 @@ const BashoResultScene = {
     Sound.play(res.isYusho ? 'yusho' : (res.promoted || wins > losses) ? 'good' : wins < losses ? 'bad' : 'tap');
     document.getElementById('btn-next-season').addEventListener('click', () => {
       Game.showScene('allocate');
+    });
+    // 場所の結果をXでシェア（ウェブ版のみ）
+    document.getElementById('btn-share-x')?.addEventListener('click', () => {
+      const r = Game.state.rikishi;
+      const bashoIndex = (Game.state.calendar.bashoIndex + 5) % 6;
+      const newName = data.newTitle || getRankName(data.newRank);
+      const text = `どすこい！はなりきしで ${r.shikona}が ${getBashoName(bashoIndex)} ${wins}勝${losses}敗${res.isYusho ? '・優勝！' : ''} ${res.promoted ? '昇進して ' : ''}${newName}
+#はなりきし`;
+      window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent('https://hanarikishi.github.io/hanarikishi-game/life/'), '_blank', 'noopener');
     });
   },
 };

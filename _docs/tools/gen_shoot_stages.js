@@ -34,6 +34,15 @@ function pathOf(st, vx, vy) {
   }
   return null;
 }
+function addTramp(st, r) {
+  const len = R(r, 90, 130), tilt = R(r, 0, 22) * Math.PI / 180;
+  const lo = st.shooter + 120, hi = st.hoop.x - 110 - len - 28;
+  if (hi < lo) return false;
+  const fx = R(r, lo, hi), gap = R(r, 78, 100), t1 = fx + 28, t2 = t1 + len * Math.cos(tilt), y1 = C.FLOOR - 8, y2 = y1 - len * Math.sin(tilt);
+  st.walls.push([fx, st.ceil, fx, C.FLOOR - gap, 'w']);                     // 天井から下がる棒（下をくぐる）
+  st.walls.push([Math.round(t1), y1, Math.round(t2), Math.round(y2), 'z']);   // トランポリン
+  return true;
+}
 function addBlocker(st, r, kind) {
   const sols = [];
   for (let a = 12; a <= 80; a += 4) for (let sp = 400; sp <= C.MAX_SPEED; sp += 40) {
@@ -45,9 +54,12 @@ function addBlocker(st, r, kind) {
   if (!pts || pts.length < 12) return false;
   const k = Math.floor(pts.length * (0.3 + r() * 0.35)), [px, py] = pts[k], hp = S.hoopAt(st, 0);
   if (py < st.ceil + 36 || py > C.FLOOR - 70 || Math.hypot(px - hp.x, py - hp.y) < 100 || Math.abs(px - S.ballHome(st).x) < 90) return false;
-  if (kind === 'peg') {
-    const ang = r() * Math.PI, d = R(r, 22, 30);
-    for (let j = -1; j <= 1; j++) st.pegs.push([Math.round(px + Math.cos(ang) * d * j), Math.round(py + Math.sin(ang) * d * j), R(r, 9, 12)]);
+  if (kind === 'peg') {   // 棒（短い棒を3本ならべる）
+    const ang = r() * Math.PI, d = R(r, 28, 36);
+    for (let j = -1; j <= 1; j++) {
+      const cx = px + Math.cos(ang) * d * j, cy = py + Math.sin(ang) * d * j, a = ang + Math.PI / 2 + R(r, -30, 30) * Math.PI / 180, l = R(r, 16, 26);
+      st.walls.push([Math.round(cx - Math.cos(a) * l), Math.round(cy - Math.sin(a) * l), Math.round(cx + Math.cos(a) * l), Math.round(cy + Math.sin(a) * l), 'w']);
+    }
   } else {
     const len = R(r, 70, 130) / 2, ang = (R(r, -35, 35)) * Math.PI / 180;
     st.walls.push([Math.round(px - Math.cos(ang) * len), Math.round(py - Math.sin(ang) * len), Math.round(px + Math.cos(ang) * len), Math.round(py + Math.sin(ang) * len), kind === 'mat' ? 'z' : 'w']);
@@ -85,15 +97,15 @@ const CHAPTERS = [
     { o: {}, obs: ['peg'] }, { o: {}, obs: ['peg'] }, { o: {}, obs: ['peg', 'peg'] },
     { o: {}, obs: ['peg', 'plank'] }, { o: { bank: 1 }, obs: ['peg'] },
   ] },
-  { name: '動くゴールとはねるマット', specs: [
+  { name: '動くゴールとトランポリン', specs: [
     { o: { moving: 'v' } }, { o: { moving: 'v' } }, { o: { moving: 'h' } }, { o: { moving: 'h', fast: 1 } },
-    { o: {}, obs: ['mat'] }, { o: {}, obs: ['mat', 'plank'] },
-    { o: { moving: 'v' }, obs: ['mat'] }, { o: { moving: 'h' }, obs: ['plank'] },
+    { o: {}, obs: ['tramp'] }, { o: {}, obs: ['tramp', 'plank'] },
+    { o: { moving: 'v' }, obs: ['tramp'] }, { o: { moving: 'h' }, obs: ['tramp'] },
   ] },
   { name: '総まとめ', specs: [
-    { o: { bank: 1 }, obs: ['plank'] }, { o: { moving: 'v' }, obs: ['peg'] }, { o: {}, obs: ['mat', 'peg'] },
-    { o: { moving: 'h' }, obs: ['mat', 'plank'] }, { o: { bank: 1 }, obs: ['mat'] }, { o: { moving: 'v', fast: 1 }, obs: ['peg', 'plank'] },
-    { o: {}, obs: ['peg', 'mat', 'plank'] }, { o: { moving: 'v', fast: 1 }, obs: ['plank', 'peg', 'mat'] },
+    { o: { bank: 1 }, obs: ['plank'] }, { o: { moving: 'v' }, obs: ['peg'] }, { o: {}, obs: ['tramp', 'peg'] },
+    { o: { moving: 'h' }, obs: ['tramp', 'plank'] }, { o: { bank: 1 }, obs: ['tramp'] }, { o: { moving: 'v', fast: 1 }, obs: ['peg', 'plank'] },
+    { o: {}, obs: ['tramp', 'peg', 'plank'] }, { o: { moving: 'v', fast: 1 }, obs: ['tramp', 'plank', 'peg'] },
   ] },
 ];
 
@@ -118,7 +130,7 @@ CHAPTERS.forEach((ch, ci) => {
   const got = [];
   ch.specs.forEach((spec, si) => {
     const k = ci * PER + si;
-    let obs = (spec.obs || []).slice(), made = null;
+    let obs = (spec.obs || []).slice().sort((a, b) => (b === 'tramp') - (a === 'tramp')), made = null;   // トランポリンを先に置く
     while (!made) {
       for (let i = 0; i < 4000 && !made; i++) {
         const r = rng(seed++);
@@ -126,13 +138,15 @@ CHAPTERS.forEach((ch, ci) => {
         st.hoop.rim = RIM_AT(k);
         st.ceil = Math.max(30, Math.round(st.hoop.y - (st.hoop.dy || 0) - GAP_AT(k) - r() * 60));
         st.walls = st.walls || []; st.pegs = st.pegs || [];
-        if (!obs.every(kd => addBlocker(st, r, kd))) continue;
+        if (!obs.every(kd => kd === 'tramp' ? addTramp(st, r) : addBlocker(st, r, kd))) continue;
         const ratio = solveRatio(st);
         const hi = spec.free ? 1 : HI_AT(k), lo = spec.free ? 0.02 : Math.max(0.003, hi * 0.25);
         if (ratio < lo || ratio > hi) continue;
         // 障害物があるなら、あるとないとで入りやすさが3割以上変わるものだけ（飾りは使わない）
         const hasObs = st.walls.length + st.pegs.length > (spec.o.bank ? 1 : 0);
         if (hasObs) { const bare = bareRatio(st); if (Math.abs(bare - ratio) < 0.25 * Math.max(bare, ratio)) continue; }
+        // トランポリンの面は、トランポリンが無いと ほとんど入らないものだけ（飾りにしない）
+        if (obs.includes('tramp')) { const noT = solveRatio({ ...st, walls: st.walls.filter(w => w[4] !== 'z') }); if (noT > 0.3 * ratio) continue; }
         // 直前の3面と、同じ打ち方で入ってしまうものは使わない
         st.sol = sampleSol(st);
         if (!st.sol || got.slice(-3).some(o => S.simulate(st, o.sol[0], o.sol[1]).scored || S.simulate(o, st.sol[0], st.sol[1]).scored)) continue;

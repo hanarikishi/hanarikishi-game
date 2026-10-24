@@ -87,6 +87,8 @@
   #ovBtn:active { transform: translateY(1px); }
   #ovShare { font-weight: bold; font-size: 15px; padding: 8px 22px; border-radius: 999px; border: 3px solid var(--ink); background: #111; color: #fff; cursor: pointer; }
   #ovShare[hidden] { display: none; }
+  #ovRank { font-weight: bold; font-size: 15px; padding: 8px 22px; border-radius: 999px; border: 3px solid var(--ink); background: #ffd24a; color: var(--ink); cursor: pointer; }
+  #ovRank[hidden] { display: none; }
   #toList { margin-top: 4px; color: var(--ink); font-weight: bold; font-size: 15px; }
 </style>
 </head>
@@ -108,12 +110,15 @@
       <p id="ovText">同じ力士をぶつけて番付を上げよう！<br>横綱を目指せ</p>
       <button id="ovBtn">はじめる</button>
       <button id="ovShare" hidden>𝕏 でシェア</button>
+      <button id="ovRank" hidden>🏆 ランキング</button>
       <a id="toList" href="../">◀ ゲーム一覧</a>
     </div>
   </div>
 </div>
 
 <script src="../share.js"></script>
+<script src="../rank.js"></script>
+<script src="../firebase-config.js"></script>
 <script src="matter.min.js"></script>
 <script>
 (() => {
@@ -475,15 +480,17 @@
     $('ovText').innerHTML = text;
     $('ovBtn').textContent = btn;
     $('ovImg').src = win ? '../parts/home.png' : '../parts/home.png';
-    $('ovShare').hidden = state !== 'over';
+    $('ovShare').hidden = state !== 'over'; $('ovRank').hidden = state !== 'over';
     ov.classList.add('show');
   }
   function gameOver() {
     state = 'over';
     const top = topLv;
+    HanaRank.submit(score);
     showOverlay('取組終了！', `最高位：<b>${RANKS[top].name}</b><br>スコア：<b>${score}</b>`, 'もう一番');
   }
   function start() { ov.classList.remove('show'); reset(); }
+  $('ovRank').onclick = () => HanaRank.open();
   $('ovShare').onclick = () => HanaShare.open(`はなりきし出世で ${RANKS[topLv].name} まで出世！ スコア${score}`);
   $('ovBtn').onclick = start;
   $('restart').onclick = start;

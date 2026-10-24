@@ -1,6 +1,6 @@
 // はなりきしシュートの物理（ゲーム本体と、ステージを作る道具の両方から使う）
 // ステージ: { shooter: x, ceil（天井の高さ。省くと天井なし）, hoop: { x, y, board: 'R' | 'L' | null, dx, dy, period, rim（輪の半幅。省くと27） }, walls: [[x1, y1, x2, y2, 種類]], pegs: [[x, y, r]] }
-//   walls の種類: 'w' 板（ふつうに跳ね返る）  'z' 座布団（よく跳ねる）
+//   walls の種類: 'w' 板（ふつうに跳ね返る）  'z' トランポリン（強くはねる。当たった向きの速さが 1.3倍になって返る）
 (function (root) {
   'use strict';
   const C = { W: 700, H: 420, FLOOR: 384, BALL_R: 13, G: 1300, RIM_HALF: 27, MAX_SPEED: 1150, PULL_K: 6, DT: 1 / 240, WALL_T: 5 };
@@ -27,7 +27,7 @@
     const [x1, y1, x2, y2, type] = s, ex = x2 - x1, ey = y2 - y1, L2 = ex * ex + ey * ey;
     let k = L2 ? ((b.x - x1) * ex + (b.y - y1) * ey) / L2 : 0;
     k = Math.max(0, Math.min(1, k));
-    const bounce = type === 'z' ? 1.05 : 0.55;
+    const bounce = type === 'z' ? 1.3 : 0.55;
     hitPoint(b, x1 + ex * k, y1 + ey * k, C.WALL_T, bounce, type === 'z' ? 'zabuton' : type === 'b' ? 'board' : 'wall', onHit);
   }
 

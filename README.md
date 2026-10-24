@@ -11,6 +11,8 @@
 .
 ├─ index.html            ゲーム一覧ページ（games.json を読んで表示）
 ├─ share.js              Xでシェアの共通部品（ゲームから HanaShare.update(終わったか, 結果の文) を毎フレーム呼ぶ）
+├─ rank.js               ランキングと記録の共通部品（端末の記録＋Firebaseのみんなの順位。作りかたは _docs/FIREBASE.md）
+├─ firebase-config.js    Firebase の設定（空のままなら端末の記録だけ）
 ├─ games.json            ゲームの一覧（ここに1つ足せば一覧に載る）
 ├─ manifest.webmanifest  一覧ページのアプリ設定
 ├─ parts/                全ゲーム共通の画像（はなりきしの絵、アイコン）
@@ -24,6 +26,7 @@
 ├─ survivors/            はなりきしサバイバーズ
 ├─ shogi/                はなりきし将棋
 ├─ life/                 どすこい！はなりきし（育成。元はアプリ用のプロジェクトで、ここには公開用のファイルだけ置いている）
+├─ hakkeyoi/             はなりきし はっけよい！（反射神経テスト。5回の平均で番付）
 ├─ breakout/             はなりきしブロック崩し
 ├─ shoot/                はなりきしシュート（横画面。ステージは _docs/tools/gen_shoot_stages.js で作る）
 ├─ _tachiai/             はなりきし 立ち合い（非公開。公開するときは tachiai/ に戻し、

@@ -46,6 +46,8 @@
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
 <script src="../share.js"></script>
+<script src="../rank.js"></script>
+<script src="../firebase-config.js"></script>
 <script>
 (() => {
   'use strict';
@@ -717,6 +719,7 @@
   function frame(now) {
     toList.hidden = !(scene === 'title' || scene === 'rules' || scene === 'result');
     HanaShare.update(scene === 'result' && result.winner === 1, `はなりきし将棋（${LEVELS[diff].name}）で ${streak}連勝中！`);
+    HanaRank.update(scene === 'result' && result.winner === 1, streak);
     const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
     update(dt); draw(); requestAnimationFrame(frame);
   }

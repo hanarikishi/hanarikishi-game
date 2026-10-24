@@ -116,6 +116,8 @@ button { cursor: pointer; font-family: inherit; border: none; outline: none; }
   letter-spacing: 0.2em;
 }
 
+.btn-share-x { display: block; margin: 12px auto 0; padding: 10px 26px; border-radius: 999px; border: 1px solid #555; background: #111; color: #fff; font: inherit; font-weight: bold; font-size: 0.95rem; letter-spacing: 0.08em; cursor: pointer; }
+.btn-share-x:active { opacity: 0.7; }
 .btn-large { width: 260px; font-size: 1.15rem; padding: 16px 0; }
 
 .btn-back {
