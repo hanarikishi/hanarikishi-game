@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>はなりきしフラッピー</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="はなりきしゲームズ">
+<meta property="og:title" content="はなりきしフラッピー">
+<meta property="og:description" content="両手の軍配で羽ばたき、米俵をよける">
+<meta property="og:url" content="https://hanarikishi.github.io/hanarikishi-game/flappy/">
+<meta property="og:image" content="https://hanarikishi.github.io/hanarikishi-game/thumbs/flappy.jpg">
+<meta name="twitter:card" content="summary">
+<meta name="description" content="両手の軍配で羽ばたき、米俵をよける">
 <link rel="icon" href="../parts/icon-192.png">
 <link rel="apple-touch-icon" href="../parts/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -37,6 +45,7 @@
 <canvas id="game" width="840" height="1400"></canvas>
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
+<script src="../share.js"></script>
 <script>
 (() => {
   'use strict';
@@ -360,6 +369,7 @@
   let last = 0;
   function frame(t) {
     toList.hidden = !(state !== 'play');
+    HanaShare.update(state === 'over', `はなりきしフラッピーで ${score}点！`);
     const dt = Math.min(0.033, (t - last) / 1000 || 0);
     last = t;
     update(dt);

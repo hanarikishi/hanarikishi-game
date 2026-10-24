@@ -1,7 +1,7 @@
 // オフラインでも遊べるようにキャッシュする。更新したら VERSION を上げる。
 const VERSION = 'hanarikishi-v8';
 const FILES = [
-  './', './index.html', './matter.min.js', './manifest.webmanifest',
+  './', './index.html', '../share.js', './matter.min.js', './manifest.webmanifest',
   '../parts/body_color.png', '../parts/mawashi.png', '../parts/body_line.png',
   '../parts/normal.png', '../parts/collision.png',
   '../parts/win.png', '../parts/home.png',

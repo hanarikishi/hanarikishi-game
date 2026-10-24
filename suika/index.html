@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>はなりきし出世</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="はなりきしゲームズ">
+<meta property="og:title" content="はなりきし出世">
+<meta property="og:description" content="同じ力士をぶつけて合体、横綱を目指すパズル">
+<meta property="og:url" content="https://hanarikishi.github.io/hanarikishi-game/suika/">
+<meta property="og:image" content="https://hanarikishi.github.io/hanarikishi-game/thumbs/suika.jpg">
+<meta name="twitter:card" content="summary">
+<meta name="description" content="同じ力士をぶつけて合体、横綱を目指すパズル">
 <link rel="icon" href="../parts/icon-192.png">
 <link rel="apple-touch-icon" href="../parts/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -77,6 +85,8 @@
     border: 3px solid var(--ink); background: var(--accent); color: #fff; cursor: pointer;
   }
   #ovBtn:active { transform: translateY(1px); }
+  #ovShare { font-weight: bold; font-size: 15px; padding: 8px 22px; border-radius: 999px; border: 3px solid var(--ink); background: #111; color: #fff; cursor: pointer; }
+  #ovShare[hidden] { display: none; }
   #toList { margin-top: 4px; color: var(--ink); font-weight: bold; font-size: 15px; }
 </style>
 </head>
@@ -97,11 +107,13 @@
       <h1 id="ovTitle">はなりきし出世</h1>
       <p id="ovText">同じ力士をぶつけて番付を上げよう！<br>横綱を目指せ</p>
       <button id="ovBtn">はじめる</button>
+      <button id="ovShare" hidden>𝕏 でシェア</button>
       <a id="toList" href="../">◀ ゲーム一覧</a>
     </div>
   </div>
 </div>
 
+<script src="../share.js"></script>
 <script src="matter.min.js"></script>
 <script>
 (() => {
@@ -463,6 +475,7 @@
     $('ovText').innerHTML = text;
     $('ovBtn').textContent = btn;
     $('ovImg').src = win ? '../parts/home.png' : '../parts/home.png';
+    $('ovShare').hidden = state !== 'over';
     ov.classList.add('show');
   }
   function gameOver() {
@@ -471,6 +484,7 @@
     showOverlay('取組終了！', `最高位：<b>${RANKS[top].name}</b><br>スコア：<b>${score}</b>`, 'もう一番');
   }
   function start() { ov.classList.remove('show'); reset(); }
+  $('ovShare').onclick = () => HanaShare.open(`はなりきし出世で ${RANKS[topLv].name} まで出世！ スコア${score}`);
   $('ovBtn').onclick = start;
   $('restart').onclick = start;
 

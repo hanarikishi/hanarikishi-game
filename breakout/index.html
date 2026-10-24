@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>はなりきしブロック崩し</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="はなりきしゲームズ">
+<meta property="og:title" content="はなりきしブロック崩し">
+<meta property="og:description" content="はなりきしの弾で崩す本格ブロック崩し。分裂・レーザーなどのパワーアップつき">
+<meta property="og:url" content="https://hanarikishi.github.io/hanarikishi-game/breakout/">
+<meta property="og:image" content="https://hanarikishi.github.io/hanarikishi-game/thumbs/breakout.jpg">
+<meta name="twitter:card" content="summary">
+<meta name="description" content="はなりきしの弾で崩す本格ブロック崩し。分裂・レーザーなどのパワーアップつき">
 <link rel="icon" href="../parts/icon-192.png">
 <link rel="apple-touch-icon" href="../parts/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -37,6 +45,7 @@
 <canvas id="game" width="840" height="1400"></canvas>
 <a id="toList" href="../">◀ ゲーム一覧</a>
 
+<script src="../share.js"></script>
 <script>
 (() => {
   'use strict';
@@ -429,6 +438,7 @@
   let last = 0;
   function frame(now) {
     toList.hidden = state === 'play';
+    HanaShare.update(state === 'over', `はなりきしブロック崩しで ${score}点！`);
     const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
     update(dt); draw(); requestAnimationFrame(frame);
   }

@@ -10,6 +10,7 @@
 ```
 .
 ├─ index.html            ゲーム一覧ページ（games.json を読んで表示）
+├─ share.js              Xでシェアの共通部品（ゲームから HanaShare.update(終わったか, 結果の文) を毎フレーム呼ぶ）
 ├─ games.json            ゲームの一覧（ここに1つ足せば一覧に載る）
 ├─ manifest.webmanifest  一覧ページのアプリ設定
 ├─ parts/                全ゲーム共通の画像（はなりきしの絵、アイコン）
@@ -35,8 +36,9 @@
 1. `_template/` をフォルダごとコピーして、ゲーム名のフォルダにします（例: `cooking/`）。
 2. `index.html` を作り込みます。画像は `../parts/` から読みます。
 3. `manifest.webmanifest` の名前と、`sw.js` の `VERSION`（例: `cooking-v1`）を書き換えます。
-4. サムネイルを `thumbs/cooking.jpg`（縦長 3:5 ・ 360x600 程度）として置きます。
-5. `games.json` に1件足します。
+4. `index.html` の `og:` と `description` の meta（Xなどに貼ったときのカード）を書き換えます。
+5. サムネイルを `thumbs/cooking.jpg`（縦長 3:5 ・ 360x600 程度）として置きます。
+6. `games.json` に1件足します。
 
 ```json
 {
@@ -57,7 +59,7 @@
   - `type: "number"` … 数字をそのまま表示（`unit` で単位）。
   - `type: "time"` … `{"time": 秒}` の形で保存している場合に `mm:ss` で表示。
 
-6. `git add -A` → `git commit` → `git push`。1〜2分で公開されます。
+7. `git add -A` → `git commit` → `git push`。1〜2分で公開されます。
 
 ## ゲームを作るときの約束
 
