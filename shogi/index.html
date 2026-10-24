@@ -248,7 +248,7 @@
   const LEVELS = [   // 難易度ごとの強さ（読む深さ・並びの数・わざと入れるゆらぎ）
     { name: 'やさしい', depth: 1, samples: 2, noise: 3, color: '#c9eaa5' },
     { name: 'ふつう',   depth: 2, samples: 3, noise: 1, color: '#ffe08a' },
-    { name: 'つよい',   depth: 2, samples: 8, noise: 0, color: '#ffb3a1' },
+    { name: 'つよい',   depth: 2, samples: 8, noise: 0, color: '#ffb3a1', reveal: 1 },   // reveal: はじめに CPU が あなたの駒を1枚だけ 見ている
   ];
   // st の下側の駒の中身は見ずに、cands と counts から当てはめ直して読む
   function cpuMove(st, cands, counts, lv) {
@@ -344,7 +344,14 @@
     } while (!noNifu(1));
     sel = null;
   }
-  function startGame() { scene = 'play'; sel = null; banner = { text: 'よろしくお願いします', t: 0 }; }
+  function startGame() {
+    scene = 'play'; sel = null; banner = { text: 'よろしくお願いします', t: 0 };
+    pcs.forEach(p => { delete p.seen; });
+    if (LEVELS[diff].reveal) {   // つよい: あなたの駒を1枚、CPU が見ている（種類がばれている）
+      const mine = pcs.filter(p => p.side === 1), p = mine[Math.floor(Math.random() * mine.length)];
+      p.cand = 1 << (p.c & 7); p.seen = true; banner = { text: 'CPUに 駒を1枚 見られている！', t: 0 };
+    }
+  }
 
   const pieceAt = i => pcs.find(p => p.cell === i);
   const state = () => {
@@ -549,6 +556,7 @@
     }
     drawSumo(g, pieceFaces(p.side, p.c), face, p.x, p.y, r, a);
     if (p.side === 1) { drawDots(g, p.c, p.x, p.y, a); nameChip(g, NAME[p.c], p.x + 14, p.y + 12, 1); }
+    if (p.side === 1 && p.seen) { g.save(); g.globalAlpha = a; g.beginPath(); g.arc(p.x - 14, p.y - 14, 8, 0, Math.PI * 2); g.fillStyle = '#c62818'; g.fill(); g.restore(); text(g, '見', p.x - 14, p.y - 13, 10, '#fff', 'rgba(0,0,0,0)'); }   // CPUに見られている駒
     else if (scene === 'result') nameChip(g, NAME[p.c], p.x + 14, p.y + 12, -1);   // 終わったら相手の駒を明かす
   }
 
@@ -696,6 +704,7 @@
       ['勝ち', '王手はなし。相手の玉を取ったら勝ち！'],
       ['', '自分の玉も、取られないように守ろう。'],
       ['', 'CPUもあなたの駒は見えていない。'],
+      ['つよい', 'ただし CPUは はじめに駒を1枚（赤い「見」）見ている。'],
     ];
     L.forEach(([h, s], i) => {
       if (h) text(g, h, 20, 100 + i * 34, 15, '#b71c1c', 'rgba(0,0,0,0)', 'left');
