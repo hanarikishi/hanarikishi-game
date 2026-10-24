@@ -37,7 +37,21 @@ function ngNormalize(text) {
 const NG_WORDS_NORM = [...new Set(NG_WORDS.map(ngNormalize))];
 
 // 使えない四股名なら理由の文を返す。使えるなら null
+// 画面にそのまま差しこむので、HTML をこわす文字は四股名に使えない（読みこみのときも取りのぞく）
+const NAME_BAD_CHARS = /[<>&"'`\u0000-\u001f\u202a-\u202e\u2066-\u2069]/g;
+function cleanName(s) { return String(s).replace(NAME_BAD_CHARS, ''); }
+// セーブの中の四股名・名前から、あぶない文字を取りのぞく（手でセーブを書きかえられても、画面を こわせない）
+function sanitizeSaveNames(o, depth = 0) {
+  if (!o || typeof o !== 'object' || depth > 10) return;
+  for (const k of Object.keys(o)) {
+    const v = o[k];
+    if (typeof v === 'string') { if (k === 'shikona' || k === 'name') o[k] = cleanName(v); }
+    else if (v && typeof v === 'object') sanitizeSaveNames(v, depth + 1);
+  }
+}
+
 function shikonaNgReason(name) {
+  if (/[<>&"'`\u0000-\u001f\u202a-\u202e\u2066-\u2069]/.test(String(name))) return 'その四股名には使えない文字（< > & " \' `）が入っています';
   const s = ngNormalize(name);
   if (!s) return null;
   // ネタ：ドラクエのロトシリーズで主人公に付けられない名前。ぴったり同じときだけ（ひろと 等は使える）

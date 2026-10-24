@@ -1,4 +1,4 @@
-const APP_VERSION = '1.11.3';
+const APP_VERSION = '1.11.4';
 // セーブの形式。稽古・米俵を外した本場所のみモードから 2。これより古いセーブは読み込まない（新しく始める）
 const SAVE_VERSION = 2;
 
@@ -136,14 +136,18 @@ const Game = {
   save() {
     if (!this.state) return;
     this.state.lastTickTime = Date.now();
-    localStorage.setItem('hanarikisi_save', JSON.stringify(this.state));
+    try { localStorage.setItem('hanarikisi_save', JSON.stringify(this.state)); } catch {}   // 容量がいっぱいなどでも、ゲームを止めない
   },
 
   loadSave() {
-    const raw = localStorage.getItem('hanarikisi_save');
+    let raw = null;
+    try { raw = localStorage.getItem('hanarikisi_save'); } catch {}
     if (raw) {
-      const st = JSON.parse(raw);
-      if ((st.saveVersion || 1) < SAVE_VERSION) { localStorage.removeItem('hanarikisi_save'); return; }   // 古い形式は捨てる
+      let st = null;
+      try { st = JSON.parse(raw); } catch {}
+      if (!st || typeof st !== 'object' || !st.rikishi) { try { localStorage.removeItem('hanarikisi_save'); } catch {} return; }   // こわれたセーブは捨てる（新しく始める）
+      if ((st.saveVersion || 1) < SAVE_VERSION) { try { localStorage.removeItem('hanarikisi_save'); } catch {} return; }   // 古い形式は捨てる
+      sanitizeSaveNames(st);
       this.state = st;
       patchSave(this.state);
       // 女将：アプリを閉じていた間のたにまち（最大6時間＋スキル）
