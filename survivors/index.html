@@ -102,6 +102,16 @@
     mawashi: { name: '締め込み', icon: '締', color: '#b0b0c0', max: 5, desc: '受けるダメージ -1' },
   };
   const MAX_WEAPONS = 6, MAX_PASSIVES = 6;
+  // 進化: 武器が最大Lvで、組み合わせの持ち物を1つでも持っていると、レベルアップの札か宝箱で進化できる
+  const EVO = {
+    hari:    { pas: 'keiko',   name: '乱れ張り手', icon: '乱', desc: '張り手が四連打になり、威力と範囲が大きく上がる' },
+    shio:    { pas: 'tachiai', name: '塩ふぶき',   icon: '吹', desc: '塩が吹雪のように降りそそぎ、すべてを貫く' },
+    gunbai:  { pas: 'kesho',   name: '大軍配',     icon: '大', desc: '軍配がさらに増え、ほとんど消えない' },
+    tawara:  { pas: 'chikara', name: '米俵の雨',   icon: '雨', desc: '米俵が雨のように降りそそぐ' },
+    shiko:   { pas: 'chanko',  name: '大地震',     icon: '震', desc: '揺れが大きく広がり、威力が倍になる' },
+    nobori:  { pas: 'ashi',    name: '大のぼり',   icon: '幟', desc: '巨大な旗が次々と飛んでいく' },
+    inazuma: { pas: 'mawashi', name: '神鳴り',     icon: '神', desc: '雷が降りしきる' },
+  };
 
   // ---- 敵 ----
   const ENEMY = {
@@ -483,6 +493,28 @@
   // ---- 武器ごとの強さ ----
   const cnt = (lv, arr) => arr.filter(x => lv >= x).length;
   function wstat(w) {
+    const st = wstatBase(w);
+    if (w.evo) {
+      switch (w.id) {
+        case 'hari':    st.dmg *= 2; st.area *= 1.4; st.cd = 0.9; st.hits = 4; break;
+        case 'shio':    st.amount += 4; st.pierce = 99; st.cd *= 0.6; st.dmg *= 1.5; break;
+        case 'gunbai':  st.amount += 3; st.radius *= 1.3; st.dur = 7; st.cd = 1.0; st.dmg *= 1.6; st.spin *= 1.2; break;
+        case 'tawara':  st.amount *= 2; st.dmg *= 1.5; st.cd *= 0.7; break;
+        case 'shiko':   st.radius *= 1.5; st.dmg *= 2.2; st.tick *= 0.7; break;
+        case 'nobori':  st.amount += 2; st.size *= 1.5; st.dmg *= 1.6; st.cd *= 0.75; break;
+        case 'inazuma': st.amount += 3; st.dmg *= 1.8; st.radius *= 1.4; st.cd *= 0.6; break;
+      }
+    }
+    return st;
+  }
+  const canEvolve = w => w.lv >= WEAPONS[w.id].max && !w.evo && pv(EVO[w.id].pas) >= 1;
+  function evolve(id) {
+    const w = weapons.find(x => x.id === id);
+    if (w) w.evo = true;
+    banner = { text: '進化！ ' + EVO[id].name, t: 2.6, color: '#ff8a3c' };
+    sfx.chest();
+  }
+  function wstatBase(w) {
     const lv = w.lv;
     switch (w.id) {
       case 'hari': return { amount: lv >= 2 ? 2 : 1, dmg: 10 + 5 * cnt(lv, [3, 5, 7, 8]), area: 1 + 0.25 * cnt(lv, [4, 6]), cd: 1.35 };
@@ -661,7 +693,8 @@
           w.cd = st.cd * S.cd;
           const dir = st.amount >= 2 ? P.face : (w.flip *= -1, w.flip);
           doHari(w, st, dir);
-          if (st.amount >= 2) w.pending.push({ t: 0.22, dir: -dir });
+          if (st.hits === 4) w.pending.push({ t: 0.12, dir: -dir }, { t: 0.24, dir }, { t: 0.36, dir: -dir });
+          else if (st.amount >= 2) w.pending.push({ t: 0.22, dir: -dir });
         }
       } else if (w.id === 'shio') {
         w.cd -= dt;
@@ -817,6 +850,7 @@
       else if (Object.keys(passives).length < MAX_PASSIVES) pool.push({ kind: 'p', id, lv: 1 });
     }
     const out = [];
+    for (const w of weapons) if (canEvolve(w) && out.length < 3) out.push({ kind: 'evo', id: w.id });
     while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
     if (!out.length) out.push({ kind: 'heal' });
     return out;
@@ -830,6 +864,7 @@
 
   function applyChoice(c) {
     if (c.kind === 'w') addWeapon(c.id);
+    else if (c.kind === 'evo') evolve(c.id);
     else if (c.kind === 'p') { passives[c.id] = (passives[c.id] || 0) + 1; recalc(); }
     else { P.hp = P.maxHp; coins += 50; }
     state = 'play';
@@ -969,7 +1004,7 @@
           const c = makeChoices()[0];
           if (c && c.kind !== 'heal') {
             applyChoiceNoState(c);
-            banner = { text: `宝箱！ ${(c.kind === 'w' ? WEAPONS : PASSIVES)[c.id].name} Lv.${c.lv}`, t: 2.4, color: '#ffe27a' };
+            if (c.kind !== 'evo') banner = { text: `宝箱！ ${(c.kind === 'w' ? WEAPONS : PASSIVES)[c.id].name} Lv.${c.lv}`, t: 2.4, color: '#ffe27a' };
           } else { P.hp = P.maxHp; coins += 50; }
         }
       }
@@ -978,6 +1013,7 @@
   }
   function applyChoiceNoState(c) {
     if (c.kind === 'w') addWeapon(c.id);
+    else if (c.kind === 'evo') evolve(c.id);
     else if (c.kind === 'p') { passives[c.id] = (passives[c.id] || 0) + 1; recalc(); }
   }
 
@@ -1219,11 +1255,11 @@
     g.fillStyle = '#e02020'; g.fillRect(x - w / 2, y + 16, Math.round(w * p), 4);
   }
 
-  function iconBox(g, x, y, size, icon, color, lv, maxLv) {
+  function iconBox(g, x, y, size, icon, color, lv, maxLv, evo) {
     g.fillStyle = '#10141f'; g.fillRect(x, y, size, size);
-    g.strokeStyle = '#d4af37'; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, size - 2, size - 2);
+    g.strokeStyle = evo ? '#ff7a2a' : '#d4af37'; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, size - 2, size - 2);
     text(g, icon, x + size / 2, y + size / 2 + 1, size * 0.6, color, '#000');
-    if (lv) text(g, String(lv), x + size - 3, y + size - 3, Math.max(9, size * 0.3), maxLv ? '#ffd24a' : '#fff', '#000', 'right');
+    if (lv) text(g, evo ? '★' : String(lv), x + size - 3, y + size - 3, Math.max(9, size * 0.3), evo ? '#ff9a4a' : maxLv ? '#ffd24a' : '#fff', '#000', 'right');
   }
 
   function fmt(t) { t = Math.floor(t); return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); }
@@ -1237,7 +1273,7 @@
     text(g, `LV ${level}  ${RANKS[rankOf(gt)].name}`, W - 6, 9, 10, '#fff', '#000', 'right');
     // 武器・アイテム
     let ix = 4;
-    for (const w of weapons) { const d = WEAPONS[w.id]; iconBox(g, ix, 20, 22, d.icon, d.color, w.lv, w.lv >= d.max); ix += 24; }
+    for (const w of weapons) { const d = WEAPONS[w.id]; iconBox(g, ix, 20, 22, w.evo ? EVO[w.id].icon : d.icon, d.color, w.lv, w.lv >= d.max, w.evo); ix += 24; }
     ix = 4;
     for (const [id, v] of Object.entries(passives)) { const d = PASSIVES[id]; iconBox(g, ix, 44, 20, d.icon, d.color, v, v >= d.max); ix += 22; }
     // タイマー
@@ -1272,6 +1308,17 @@
       if (c.kind === 'heal') {
         text(g, 'ちゃんこ', x + 20, y + 30, 20, '#ff9a5c', '#000', 'left');
         text(g, '体力を全回復し 小判を50枚', x + 20, y + 62, 13, '#cfd6ff', '#000', 'left', false);
+        return;
+      }
+      if (c.kind === 'evo') {
+        const ev = EVO[c.id], d0 = WEAPONS[c.id];
+        g.fillStyle = 'rgba(255,120,40,.18)'; g.fillRect(x, y, CARD.w, CARD.h);
+        g.strokeStyle = '#ff7a2a'; g.lineWidth = 3; g.strokeRect(x + 1.5, y + 1.5, CARD.w - 3, CARD.h - 3);
+        iconBox(g, x + 12, y + 20, 52, ev.icon, d0.color, 0, false, true);
+        text(g, ev.name, x + 78, y + 24, 19, '#ffb070', '#000', 'left');
+        text(g, '進化！', x + CARD.w - 14, y + 24, 13, '#ff8a3c', '#000', 'right');
+        text(g, ev.desc, x + 78, y + 56, 12, '#ffe0c0', '#000', 'left', false);
+        text(g, d0.name + ' Lv最大 + ' + PASSIVES[ev.pas].name, x + 78, y + 76, 11, '#c9a98a', '#000', 'left', false);
         return;
       }
       const d = (c.kind === 'w' ? WEAPONS : PASSIVES)[c.id];
