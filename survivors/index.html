@@ -7,11 +7,11 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="はなりきしゲームズ">
 <meta property="og:title" content="はなりきしサバイバーズ">
-<meta property="og:description" content="自動攻撃で敵の大群を生き残れ。10分で横綱">
+<meta property="og:description" content="自動攻撃で敵の大群を生き残れ。30分で横綱">
 <meta property="og:url" content="https://hanarikishi.github.io/hanarikishi-game/survivors/">
 <meta property="og:image" content="https://hanarikishi.github.io/hanarikishi-game/thumbs/survivors.jpg">
 <meta name="twitter:card" content="summary">
-<meta name="description" content="自動攻撃で敵の大群を生き残れ。10分で横綱">
+<meta name="description" content="自動攻撃で敵の大群を生き残れ。30分で横綱">
 <link rel="icon" href="../parts/icon-192.png">
 <link rel="apple-touch-icon" href="../parts/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -54,23 +54,24 @@
   // ================= 定義 =================
   const W = 420, H = 700;
   const PX = 2;                               // ドット絵1マス = 画面2px
-  const WIN_TIME = 600;                       // 10分生き残ればクリア
+  const WIN_TIME = 1800;                      // 30分生き残ればクリア
   const MAX_ENEMIES = 380;
 
   const RANKS = [
-    { name: '前相撲', from: 1,  body: '#f1efe8', belt: '#111111' },
-    { name: '序の口', from: 2,  body: '#f7e3bd', belt: '#111111' },
-    { name: '序二段', from: 4,  body: '#bfe4f6', belt: '#111111' },
-    { name: '三段目', from: 7,  body: '#c9eaa5', belt: '#111111' },
-    { name: '幕下',   from: 10, body: '#f8cfe0', belt: '#111111' },
-    { name: '十両',   from: 14, body: '#ffd699', belt: '#e65100' },
-    { name: '前頭',   from: 18, body: '#dcc4f2', belt: '#6a1b9a' },
-    { name: '小結',   from: 23, body: '#ffb3a1', belt: '#b71c1c' },
-    { name: '関脇',   from: 28, body: '#b9e3d3', belt: '#7a4a00' },
-    { name: '大関',   from: 34, body: '#ff9a3c', belt: '#14507a' },
-    { name: '横綱',   from: 40, body: '#ffee00', belt: '#1f5c00' },
+    { name: '前相撲', from: 0,  body: '#f1efe8', belt: '#111111' },
+    { name: '序の口', from: 180,  body: '#f7e3bd', belt: '#111111' },
+    { name: '序二段', from: 360,  body: '#bfe4f6', belt: '#111111' },
+    { name: '三段目', from: 540,  body: '#c9eaa5', belt: '#111111' },
+    { name: '幕下',   from: 720, body: '#f8cfe0', belt: '#111111' },
+    { name: '十両',   from: 900, body: '#ffd699', belt: '#e65100' },
+    { name: '前頭',   from: 1080, body: '#dcc4f2', belt: '#6a1b9a' },
+    { name: '小結',   from: 1260, body: '#ffb3a1', belt: '#b71c1c' },
+    { name: '関脇',   from: 1440, body: '#b9e3d3', belt: '#7a4a00' },
+    { name: '大関',   from: 1620, body: '#ff9a3c', belt: '#14507a' },
+    { name: '横綱',   from: 1800, body: '#ffee00', belt: '#1f5c00' },
   ];
-  const rankOf = lv => { let l = 0; RANKS.forEach((r, i) => { if (lv >= r.from) l = i; }); return l; };
+  // 番付は生き残った秒数で上がる（3分ごとに1つ。30分で横綱）
+  const rankOf = sec => { let l = 0; RANKS.forEach((r, i) => { if (sec >= r.from) l = i; }); return l; };
 
   // ---- 武器 ----
   const WEAPONS = {
@@ -108,7 +109,15 @@
     bat:   { name: 'こうもり',   hp: 3,   spd: 70, dmg: 3,  r: 6,  gem: 1, art: 1.0, wave: true },
     skel:  { name: 'ガイコツ',   hp: 14,  spd: 42, dmg: 6,  r: 8,  gem: 1, art: 1.0 },
     rival: { name: 'ライバル力士', hp: 70, spd: 32, dmg: 13, r: 12, gem: 5, art: 1.0 },
-    oni:   { name: '鬼',         hp: 450, spd: 44, dmg: 22, r: 17, gem: 25, art: 1.0, boss: true },
+    batB:  { name: 'あおこうもり', hp: 9,   spd: 92, dmg: 7,  r: 6,  gem: 2, art: 1.0, wave: true },
+    ghostD: { name: 'くろおばけ',  hp: 55,  spd: 46, dmg: 12, r: 9,  gem: 3, art: 1.0 },
+    skelR: { name: 'あかガイコツ', hp: 85,  spd: 58, dmg: 14, r: 8,  gem: 4, art: 1.0 },
+    tengu: { name: '天狗',        hp: 130, spd: 58, dmg: 16, r: 10, gem: 8, art: 1.0, dash: true },
+    rivalD: { name: '大関',       hp: 320, spd: 40, dmg: 22, r: 13, gem: 12, art: 1.0 },
+    oni:   { name: '赤鬼',       hp: 450, spd: 44, dmg: 22, r: 17, gem: 25, art: 1.0, boss: true },
+    oniB:  { name: '青鬼',       hp: 1400, spd: 52, dmg: 28, r: 17, gem: 40, art: 1.0, boss: true },
+    oniK:  { name: '金鬼',       hp: 3600, spd: 56, dmg: 34, r: 18, gem: 60, art: 1.0, boss: true },
+    oniD:  { name: '黒鬼',       hp: 9000, spd: 60, dmg: 45, r: 19, gem: 100, art: 1.0, boss: true },
   };
 
   // ================= ドット絵 =================
@@ -128,6 +137,21 @@
     return o;
   }
 
+  // 絵の色を変えて、強い敵の見た目を作る。mul=色をかける / hue=色相をまわす
+  function recolor(c, fn) {
+    const o = document.createElement('canvas'); o.width = c.width; o.height = c.height;
+    const g = o.getContext('2d'); g.drawImage(c, 0, 0);
+    const d = g.getImageData(0, 0, o.width, o.height), a = d.data;
+    for (let i = 0; i < a.length; i += 4) { if (!a[i + 3]) continue; const q = fn(a[i], a[i + 1], a[i + 2]); a[i] = q[0]; a[i + 1] = q[1]; a[i + 2] = q[2]; }
+    g.putImageData(d, 0, 0); return o;
+  }
+  const mul = (c, r, g, b) => recolor(c, (R, G, B) => [Math.min(255, R * r), Math.min(255, G * g), Math.min(255, B * b)]);
+  const hue = (c, deg) => recolor(c, (R, G, B) => {
+    const k = deg * Math.PI / 180, cs = Math.cos(k), sn = Math.sin(k);
+    return [R * (.213 + cs * .787 - sn * .213) + G * (.715 - cs * .715 - sn * .715) + B * (.072 - cs * .072 + sn * .928),
+            R * (.213 - cs * .213 + sn * .143) + G * (.715 + cs * .285 + sn * .140) + B * (.072 - cs * .072 - sn * .283),
+            R * (.213 - cs * .213 - sn * .787) + G * (.715 - cs * .715 + sn * .715) + B * (.072 + cs * .928 + sn * .072)].map(v => Math.max(0, Math.min(255, v)));
+  });
   const SPR = {};
   function buildPixelSprites() {
     const batPal = { '#': '#241a33', 'r': '#ff4040', 'p': '#4a3868' };
@@ -201,6 +225,28 @@
       '..bb..#..#..bb..',
       '..bb.##..##.bb..',
     ], oniPal);
+    // 天狗（赤い顔と長い鼻。突進してくる）
+    SPR.tengu = pix([
+      '..k......k..',
+      '.kkk.rr.kkk.',
+      'kkkk.rrrkkkk',
+      'kkkkrrrrkkkk',
+      '.kkkrwrwkkk.',
+      '..kkrrrrkk..',
+      '...krrrrrrr.',
+      '...kkrrrr...',
+      '..yyyyyyyy..',
+      '.yyyoyyoyyy.',
+      '.yy.yyyy.yy.',
+      '....y..y....',
+      '...kk..kk...',
+    ], { 'k': '#2a2a3a', 'r': '#e0482e', 'w': '#ffffff', 'y': '#d8b040', 'o': '#8a5a10' });
+    SPR.batB = SPR.bat.map(c => hue(c, 200));
+    SPR.ghostD = mul(SPR.ghost, .55, .4, .75);
+    SPR.skelR = mul(SPR.skel, 1, .5, .5);
+    SPR.oniB = hue(SPR.oni, 200);
+    SPR.oniK = mul(hue(SPR.oni, 55), 1.15, 1.1, .5);
+    SPR.oniD = mul(SPR.oni, .45, .35, .5);
     SPR.gem = [pix(['..#..', '.#b#.', '#bwb#', '.#b#.', '..#..'], { '#': '#1f6fd0', 'b': '#4aa8ff', 'w': '#cfeaff' })];
     SPR.gemG = [pix(['..#..', '.#b#.', '#bwb#', '.#b#.', '..#..'], { '#': '#1c8a3c', 'b': '#4adc6a', 'w': '#d0ffd8' })];
     SPR.gemR = [pix(['...#...', '..#b#..', '.#bwb#.', '#bwwwb#', '.#bwb#.', '..#b#..', '...#...'], { '#': '#a01a1a', 'b': '#ff4a4a', 'w': '#ffd0d0' })];
@@ -315,7 +361,7 @@
     return out;
   }
   const SUMO = [];      // SUMO[rank] = { normal, hit, win, flash }
-  let RIVAL = null;
+  let RIVAL = null, RIVAL2 = null;
   function buildSumoSprites() {
     RANKS.forEach(rk => {
       const e = { normal: sumoArt(rk.body, rk.belt, 'normal'), hit: sumoArt(rk.body, rk.belt, 'hit'), win: sumoArt(rk.body, rk.belt, 'win') };
@@ -324,6 +370,8 @@
     });
     const n = sumoArt('#6e6e80', '#7a1c1c', 'normal', 18), h = sumoArt('#6e6e80', '#7a1c1c', 'hit', 18);
     RIVAL = { normal: n, hit: h, flash: whiteOf(n) };
+    const n2 = sumoArt('#a63a3a', '#ffd24a', 'normal', 18), h2 = sumoArt('#a63a3a', '#ffd24a', 'hit', 18);
+    RIVAL2 = { normal: n2, hit: h2, flash: whiteOf(n2) };
   }
 
   // ================= 音 =================
@@ -390,7 +438,8 @@
 
   let state, gt, P, weapons, passives, enemies, gems, items, props, projs, fx, nums, swings, bolts, kills, coins, best;
   let lastVac = 0;
-  let level, xp, xpNeed, spawnT, nextSwarm, nextBoss, propT, choices, banner, camX, camY, shake, nid, killStreak, gemStreak, lastGem, title;
+  let lastRank = 0, nextEvent = 60, evN = 0;
+  let level, xp, xpNeed, spawnT, nextBoss, propT, choices, banner, camX, camY, shake, nid, killStreak, gemStreak, lastGem, title;
   let joy = null, keys = {}, pausedBy = null;
   try { best = JSON.parse(localStorage.getItem('sumo-surv-best') || 'null') || { time: 0, kills: 0 }; } catch { best = { time: 0, kills: 0 }; }
 
@@ -401,7 +450,7 @@
     P = { x: 0, y: 0, hp: 100, maxHp: 100, iframe: 0, face: 1, moving: false, walkT: 0, hurtT: 0, speed: 100 };
     weapons = []; passives = {};
     enemies = []; gems = []; items = []; props = []; projs = []; fx = []; nums = []; swings = []; bolts = [];
-    spawnT = 0.5; nextSwarm = 70; nextBoss = 150; propT = 8; choices = []; banner = null; shake = 0; nid = 1; killStreak = 0; gemStreak = 0; lastGem = 0;
+    spawnT = 0.5; nextEvent = 60; evN = 0; lastRank = 0; nextBoss = 150; propT = 8; choices = []; banner = null; shake = 0; nid = 1; killStreak = 0; gemStreak = 0; lastGem = 0;
     camX = 0; camY = 0;
     addWeapon('hari');
     recalc();
@@ -451,8 +500,8 @@
   function spawnEnemy(type, x, y, extra) {
     if (enemies.length >= MAX_ENEMIES && !ENEMY[type].boss) return null;
     const d = ENEMY[type], m = gt / 60;
-    const hpMul = 1 + 0.16 * m + (m > 6 ? (m - 6) * 0.12 : 0);
-    const e = { id: nid++, type, x, y, hp: d.hp * hpMul, maxHp: d.hp * hpMul, spd: d.spd * (1 + 0.012 * m) * rnd(0.92, 1.08), dmg: d.dmg * (1 + 0.05 * m),
+    const hpMul = d.boss ? 1 + 0.03 * m : 1 + 0.08 * m + 0.02 * m * m;
+    const e = { id: nid++, type, x, y, hp: d.hp * hpMul, maxHp: d.hp * hpMul, spd: d.spd * (1 + 0.007 * m) * rnd(0.92, 1.08), dmg: d.dmg * (1 + 0.05 * m),
       r: d.r, kx: 0, ky: 0, flash: 0, wob: rnd(0, 6), hitT: {}, ...extra };
     enemies.push(e); return e;
   }
@@ -465,41 +514,72 @@
 
   function pickType(m) {
     const t = [];
-    t.push(['ghost', m < 3 ? 60 : m < 6 ? 25 : 10]);
-    t.push(['bat', 40]);
-    if (m >= 1) t.push(['skel', m < 3 ? 30 : 38]);
-    if (m >= 3) t.push(['rival', m < 5 ? 14 : 28]);
+    t.push(['ghost', m < 3 ? 60 : m < 6 ? 25 : m < 10 ? 10 : 0]);
+    t.push(['bat', m < 8 ? 40 : 15]);
+    if (m >= 1) t.push(['skel', m < 3 ? 30 : m < 12 ? 38 : 15]);
+    if (m >= 4) t.push(['rival', m < 7 ? 8 : m < 14 ? 28 : 14]);
+    if (m >= 6) t.push(['batB', 25]);
+    if (m >= 9) t.push(['ghostD', 22]);
+    if (m >= 12) t.push(['tengu', 16]);
+    if (m >= 14) t.push(['skelR', 28]);
+    if (m >= 17) t.push(['rivalD', 14]);
     const tot = t.reduce((a, b) => a + b[1], 0);
     let v = Math.random() * tot;
     for (const [k, w] of t) { v -= w; if (v < 0) return k; }
     return 'ghost';
   }
 
+  // 時間で起きるイベント。n 番目。種類は 輪 → 囲い → 壁 → 突進 の順にくりかえす
+  function runEvent(n, m) {
+    const kind = ['ring', 'cage', 'line', 'rush'][n % 4];
+    const tier = m < 6 ? 0 : m < 12 ? 1 : m < 20 ? 2 : 3;
+    const R = Math.hypot(W, H) / 2 + 30;
+    const big = 1 + Math.floor(n / 4) * 0.25;
+    if (kind === 'ring') {
+      const type = ['bat', 'batB', 'batB', 'tengu'][tier], c = Math.round((24 + m * 1.5) * big);
+      for (let i = 0; i < c; i++) { const a = i / c * Math.PI * 2; spawnEnemy(type, P.x + Math.cos(a) * R, P.y + Math.sin(a) * R, { swarm: true }); }
+      banner = { text: '群れが とりかこむ！', t: 2.2, color: '#ff6a5a' };
+    } else if (kind === 'cage') {
+      // 一周ぐるっと囲んで、まわりながらせばまる。あいた すきまから にげるか、くずして ぬける
+      const type = ['ghost', 'skel', 'skelR', 'ghostD'][tier], c = Math.round((46 + m) * big), gap = Math.random() * Math.PI * 2;
+      for (let i = 0; i < c; i++) {
+        const a = i / c * Math.PI * 2;
+        if (Math.abs(Math.atan2(Math.sin(a - gap), Math.cos(a - gap))) < 0.3) continue;
+        spawnEnemy(type, P.x, P.y, { swarm: true, orbit: { a0: a, r0: 215, t0: gt, cx: P.x, cy: P.y } });
+      }
+      banner = { text: '囲まれた！', t: 2.2, color: '#ff6a5a' };
+    } else if (kind === 'line') {
+      const type = ['bat', 'skel', 'skelR', 'tengu'][tier], c = Math.round((20 + m * 1.2) * big), both = m >= 6;
+      for (const side of both ? [-1, 1] : [Math.random() < 0.5 ? -1 : 1])
+        for (let i = 0; i < c; i++) spawnEnemy(type, P.x + side * (W / 2 + 30 + (i % 3) * 14), P.y - H / 2 + (i / c) * H * 1.1, { swarm: true });
+      banner = { text: both ? '壁が せまる！' : '壁が くる！', t: 2.2, color: '#ff6a5a' };
+    } else {
+      const type = ['batB', 'tengu', 'tengu', 'rivalD'][tier], c = Math.round((14 + m * 0.8) * big), a = Math.random() * Math.PI * 2;
+      const ux = Math.cos(a), uy = Math.sin(a);
+      for (let i = 0; i < c; i++) {
+        const side = (i % 5 - 2) * 18, back = Math.floor(i / 5) * 26;
+        const e = spawnEnemy(type, P.x + ux * (R + back) - uy * side, P.y + uy * (R + back) + ux * side, { swarm: true });
+        if (e) e.spd *= 1.5;
+      }
+      banner = { text: '突進してくる！', t: 2.2, color: '#ff6a5a' };
+    }
+    sfx.boss && sfx.boss();
+  }
+
   function spawnUpdate(dt) {
     const m = gt / 60;
     spawnT -= dt;
     if (spawnT <= 0) {
-      spawnT = Math.max(0.12, 1.3 - m * 0.16);
-      const n = 1 + Math.floor(m * 1.1) + (m >= 1.5 && Math.random() < 0.4 ? 1 : 0);
+      spawnT = Math.max(0.22, 1.3 - m * 0.1);
+      const n = 1 + Math.floor(m * 0.8) + (m >= 1.5 && Math.random() < 0.4 ? 1 : 0);
       for (let i = 0; i < n; i++) spawnAtEdge(pickType(m));
     }
-    // 壁のような群れ: こうもりの輪・列
-    if (gt >= nextSwarm) {
-      nextSwarm += 45;
-      const ring = Math.random() < 0.5;
-      if (ring) {
-        const n = 22 + Math.floor(m * 5);
-        const R = Math.hypot(W, H) / 2 + 30;
-        for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; spawnEnemy('bat', P.x + Math.cos(a) * R, P.y + Math.sin(a) * R, { swarm: true }); }
-      } else {
-        const side = Math.random() < 0.5 ? -1 : 1, n = 18 + Math.floor(m * 4);
-        for (let i = 0; i < n; i++) spawnEnemy('bat', P.x + side * (W / 2 + 30 + (i % 3) * 14), P.y - H / 2 + (i / n) * H * 1.1, { swarm: true });
-      }
-    }
+    if (gt >= nextEvent && gt < WIN_TIME - 25) { nextEvent += 75; runEvent(evN++, m); }
     if (gt >= nextBoss && gt < WIN_TIME - 20) {
-      nextBoss += 110;
-      const b = spawnAtEdge('oni', 60);
-      if (b) { b.boss = true; banner = { text: '鬼が あらわれた！', t: 2.2, color: '#ff6a5a' }; }
+      nextBoss += 150;
+      const bt = gt < 540 ? 'oni' : gt < 1020 ? 'oniB' : gt < 1500 ? 'oniK' : 'oniD';
+      const b = spawnAtEdge(bt, 60);
+      if (b) { b.boss = true; banner = { text: ENEMY[bt].name + 'が あらわれた！', t: 2.2, color: '#ff6a5a' }; }
     }
     // かがり火（こわせば回復・小判）
     propT -= dt;
@@ -720,8 +800,6 @@
     xp += v;
     while (xp >= xpNeed && state === 'play') {
       xp -= xpNeed; level++; xpNeed = xpFor(level);
-      const before = rankOf(level - 1), after = rankOf(level);
-      if (after > before) banner = { text: '出世！ ' + RANKS[after].name, t: 2.2, color: '#ffd24a' };
       openLevelUp();
     }
   }
@@ -794,6 +872,7 @@
     if (state !== 'play') return;
 
     gt += dt;
+    if (rankOf(gt) > lastRank) { lastRank = rankOf(gt); banner = { text: '出世！ ' + RANKS[lastRank].name, t: 2.2, color: '#ffd24a' }; sfx.level(); }
     if (gt >= WIN_TIME) return endGame(true);
 
     // ---- プレイヤー移動 ----
@@ -826,6 +905,20 @@
     for (const e of enemies) {
       const dx = P.x - e.x, dy = P.y - e.y, d = Math.hypot(dx, dy) || 1;
       let vx = dx / d * e.spd, vy = dy / d * e.spd;
+      if (e.orbit) {   // 囲い: プレイヤーのまわりをまわりながら、半径をちぢめる
+        const o = e.orbit, t = gt - o.t0, rr = Math.max(14, o.r0 - t * 16);
+        const an = o.a0 + t * 0.32;
+        e.x += (P.x + Math.cos(an) * rr - e.x) * Math.min(1, dt * 6); e.y += (P.y + Math.sin(an) * rr - e.y) * Math.min(1, dt * 6);
+        e.kx = e.ky = 0; e.flash = Math.max(0, e.flash - dt);
+        if (!e.dead && Math.hypot(P.x - e.x, P.y - e.y) < e.r + 7) hurt(e.dmg);
+        if (rr <= 14) e.orbit = null;
+        continue;
+      }
+      if (ENEMY[e.type].dash) {   // 天狗: ときどき まっすぐ突進
+        e.dashT = (e.dashT === undefined ? rnd(1, 3) : e.dashT) - dt;
+        if (e.dashT < 0 && e.dashT > -0.5) { if (!e.dd) e.dd = [dx / d, dy / d]; vx = e.dd[0] * e.spd * 4; vy = e.dd[1] * e.spd * 4; }
+        else if (e.dashT <= -0.5) { e.dashT = rnd(2.5, 4); e.dd = null; }
+      }
       if (ENEMY[e.type].wave) { e.wob += dt * 5; vx += -dy / d * Math.sin(e.wob) * 40; vy += dx / d * Math.sin(e.wob) * 40; }
       // 重なりをほどく
       const cx = (e.x / 22) | 0, cy = (e.y / 22) | 0;
@@ -944,10 +1037,25 @@
     } else if (e.type === 'rival') {
       const b = Math.floor(performance.now() / 230 + e.id) % 2;
       drawSpr(g, fl ? RIVAL.flash : (e.flash > 0 ? RIVAL.hit : RIVAL.normal), x, y - b * 1.5, PX * 1.15, !faceRight);
-    } else if (e.type === 'oni') {
+    } else if (e.type === 'batB') {
+      const fr = Math.floor(performance.now() / 90 + e.id) % 2;
+      drawSpr(g, (fl ? SPR.batBW : SPR.batB)[fr], x, y - 2, PX, !faceRight);
+    } else if (e.type === 'ghostD') {
+      drawSpr(g, fl ? SPR.ghostDW : SPR.ghostD, x, y + Math.sin(performance.now() / 260 + e.id) * 2, PX * 1.2, !faceRight);
+    } else if (e.type === 'skelR') {
+      const b = Math.floor(performance.now() / 150 + e.id) % 2;
+      drawSpr(g, fl ? SPR.skelRW : SPR.skelR, x, y - b, PX * 1.1, !faceRight);
+    } else if (e.type === 'tengu') {
+      const b = Math.floor(performance.now() / 140 + e.id) % 2;
+      drawSpr(g, fl ? SPR.tenguW : SPR.tengu, x, y - b * 1.5, PX * 1.15, !faceRight);
+    } else if (e.type === 'rivalD') {
+      const b = Math.floor(performance.now() / 230 + e.id) % 2;
+      drawSpr(g, fl ? RIVAL2.flash : (e.flash > 0 ? RIVAL2.hit : RIVAL2.normal), x, y - b * 1.5, PX * 1.3, !faceRight);
+    } else if (e.type === 'oni' || e.type === 'oniB' || e.type === 'oniK' || e.type === 'oniD') {
+      const OS = { oni: [SPR.oni, SPR.oniW], oniB: [SPR.oniB, SPR.oniBW], oniK: [SPR.oniK, SPR.oniKW], oniD: [SPR.oniD, SPR.oniDW] }[e.type];
       const b = Math.floor(performance.now() / 200) % 2;
       g.fillStyle = 'rgba(0,0,0,.3)'; g.beginPath(); g.ellipse(x, y + 16, 18, 6, 0, 0, Math.PI * 2); g.fill();
-      drawSpr(g, fl ? SPR.oniW : SPR.oni, x, y - b * 2, PX * 1.6, !faceRight);
+      drawSpr(g, fl ? OS[1] : OS[0], x, y - b * 2, PX * (e.type === 'oni' ? 1.6 : e.type === 'oniB' ? 1.8 : e.type === 'oniK' ? 2 : 2.3), !faceRight);
       // ボスの体力
       const w = 44, p = Math.max(0, e.hp / e.maxHp);
       g.fillStyle = '#000'; g.fillRect(x - w / 2 - 1, y - 38, w + 2, 6);
@@ -1093,7 +1201,7 @@
   }
 
   function drawPlayer(g) {
-    const rk = rankOf(level);
+    const rk = rankOf(gt);
     const sp = SUMO[rk];
     const x = sx(P.x), y = sy(P.y);
     const blink = P.iframe > 0 && Math.floor(performance.now() / 70) % 2 === 0;
@@ -1126,7 +1234,7 @@
     g.fillStyle = '#2a63d8'; g.fillRect(2, 2, (W - 4) * Math.min(1, xp / xpNeed), 12);
     g.fillStyle = '#6fa8ff'; g.fillRect(2, 2, (W - 4) * Math.min(1, xp / xpNeed), 4);
     g.strokeStyle = '#d4af37'; g.lineWidth = 2; g.strokeRect(1, 1, W - 2, 14);
-    text(g, `LV ${level}  ${RANKS[rankOf(level)].name}`, W - 6, 9, 10, '#fff', '#000', 'right');
+    text(g, `LV ${level}  ${RANKS[rankOf(gt)].name}`, W - 6, 9, 10, '#fff', '#000', 'right');
     // 武器・アイテム
     let ix = 4;
     for (const w of weapons) { const d = WEAPONS[w.id]; iconBox(g, ix, 20, 22, d.icon, d.color, w.lv, w.lv >= d.max); ix += 24; }
@@ -1156,7 +1264,7 @@
   function drawLevelUp(g) {
     g.fillStyle = 'rgba(0,0,12,.7)'; g.fillRect(0, 0, W, H);
     text(g, '番付アップ！', W / 2, 138, 28, '#ffd24a', '#000');
-    text(g, `LV ${level}  ${RANKS[rankOf(level)].name}`, W / 2, 168, 14, '#fff', '#000');
+    text(g, `LV ${level}  ${RANKS[rankOf(gt)].name}`, W / 2, 168, 14, '#fff', '#000');
     choices.forEach((c, i) => {
       const x = CARD.x, y = CARD.y0 + i * (CARD.h + CARD.gap);
       g.fillStyle = '#0e1430'; g.fillRect(x, y, CARD.w, CARD.h);
@@ -1201,7 +1309,7 @@
       text(g, 'はなりきし', W / 2, 345, 36, '#ffd24a', '#3a1a00');
       text(g, 'サバイバーズ', W / 2, 388, 30, '#fff', '#3a1a00');
       text(g, 'ドラッグで 動く ・ 攻撃は 自動', W / 2, 450, 15, '#fff', '#000');
-      text(g, `10分 生きのびて 横綱を めざせ！`, W / 2, 478, 15, '#cfd6ff', '#000');
+      text(g, `30分 生きのびて 横綱を めざせ！`, W / 2, 478, 15, '#cfd6ff', '#000');
       text(g, `ベスト ${fmt(best.time)}  撃破 ${best.kills}`, W / 2, 520, 14, '#ffe27a', '#000');
       text(g, 'タップで はじめる', W / 2, 580, 22, '#9dffb0', '#000');
     }
@@ -1218,7 +1326,7 @@
       g.drawImage(IMG.home, W / 2 - 90, 120, 180, 180);
       text(g, state === 'win' ? '横綱昇進！' : '引退…', W / 2, 335, 40, state === 'win' ? '#ffd24a' : '#ff8a7a', '#000');
       text(g, `生き残り ${fmt(gt)}`, W / 2, 385, 22, '#fff', '#000');
-      text(g, `撃破 ${kills}   LV ${level}  ${RANKS[rankOf(level)].name}`, W / 2, 420, 16, '#fff', '#000');
+      text(g, `撃破 ${kills}   LV ${level}  ${RANKS[rankOf(gt)].name}`, W / 2, 420, 16, '#fff', '#000');
       text(g, `ベスト ${fmt(best.time)}   小判 ${coins}`, W / 2, 452, 14, '#ffe27a', '#000');
       if (over.t > 0.8) text(g, 'タップで もういちど', W / 2, 520, 22, '#9dffb0', '#000');
       g.globalAlpha = 1;
