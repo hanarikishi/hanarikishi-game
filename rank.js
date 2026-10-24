@@ -56,6 +56,12 @@
       const base = 'https://www.gstatic.com/firebasejs/10.12.2/';
       const [A, Au, F] = await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-auth.js'), import(base + 'firebase-firestore.js')]);
       const app = A.initializeApp(cfg()), auth = Au.getAuth(app);
+      // App Check（reCAPTCHA v3）: firebase-config.js に appCheckSiteKey があるときだけ有効にする。手順は _docs/FIREBASE.md
+      if (cfg().appCheckSiteKey) {
+        const AC = await import(base + 'firebase-app-check.js');
+        if (/^(localhost|127.0.0.1)$/.test(location.hostname)) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;   // 手元で試すとき用（コンソールにデバッグ用のトークンが出る）
+        AC.initializeAppCheck(app, { provider: new AC.ReCaptchaV3Provider(cfg().appCheckSiteKey), isTokenAutoRefreshEnabled: true });
+      }
       await Au.signInAnonymously(auth);
       return { auth, db: F.getFirestore(app), F };
     })().catch(e => { console.warn('[rank] Firebase につながりません', e); fbP = null; return null; });

@@ -5,5 +5,6 @@ window.HANA_FIREBASE = {
   apiKey: "AIzaSyA2hmR_ko98X9ekfHq4NPzI2c-EyDIu4E4",
   authDomain: "hanarikishi-games.firebaseapp.com",
   projectId: "hanarikishi-games",
-  appId: "1:349129439709:web:45b2e864d9b665e8ef5e34"
+  appId: "1:349129439709:web:45b2e864d9b665e8ef5e34",
+  appCheckSiteKey: '',   // App Check の reCAPTCHA v3 の「サイトキー」（公開してよい）。空なら App Check は使わない
 };

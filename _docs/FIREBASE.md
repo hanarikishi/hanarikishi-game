@@ -26,6 +26,35 @@
 
 `apiKey` などは、ウェブアプリの設定として **公開される前提の値** です。秘密ではありません。守っているのは手順4の **ルール** です。
 
+## 守りを固める手順（やるとよい順）
+
+### 1. API キーの使える場所を制限する（Google Cloud）
+1. https://console.cloud.google.com/apis/credentials を開く（プロジェクトは `hanarikishi-games`）。
+2. 「API キー」の中の **Browser key（Firebase が自動で作ったもの）** をひらく。`firebase-config.js` の apiKey と同じ値のもの。
+3. 「アプリケーションの制限」→ **ウェブサイト（HTTP リファラー）** を選び、次を足す。
+   - `https://hanarikishi.github.io/*`
+   - 手元で試すときだけ `http://localhost/*` と `http://127.0.0.1/*`（試し終わったら消す）
+4. 「API の制限」→ **キーを制限** → 次の3つ（App Check を使うなら、もう1つ）にチェック。
+   - Identity Toolkit API ／ Token Service API ／ Cloud Firestore API
+   - （App Check を使うなら）Firebase App Check API
+5. 保存。反映まで数分かかる。そのあと、ゲームで1回遊んで、ランキングに記録が残るか確かめる。
+- これは「他のサイトからキーを使われにくくする」ものです。ブラウザ以外から Referer を偽装すれば通れるので、**補助的な守り** です。本命は次の App Check とルール。
+
+### 2. App Check（本物のサイトからのアクセスだけを通す）
+1. https://www.google.com/recaptcha/admin で **reCAPTCHA v3** のキーを作る（ドメインは `hanarikishi.github.io`）。出てくる **サイトキー** と **シークレットキー** をひかえる。
+2. Firebase コンソール →「構築」→ **App Check** →「アプリ」→ ウェブアプリ → **reCAPTCHA** を選び、シークレットキーを貼って登録。
+3. `firebase-config.js` の `appCheckSiteKey` に **サイトキー**（公開してよい）を貼って、`git push`。
+4. App Check の画面の「リクエスト」で、Cloud Firestore と Authentication の **「検証済み」の割合** を見る。数日、「適用なし」のまま様子を見る。
+5. 検証済みがほぼ全部になったら、Cloud Firestore と Authentication の **「適用（強制）」をオン**。オンにすると、App Check なしのアクセスは拒否される（古いキャッシュのページも一時的に記録が送れなくなる）。
+- 手元（localhost）で試すときは、ブラウザのコンソールに出る **デバッグトークン** を、App Check の「アプリ」→「デバッグ トークンを管理」に登録する。
+
+### 3. 料金プランと予算アラート
+- Firebase コンソールの左下に、**Spark（無料）** か **Blaze（従量課金）** が出ている。
+  - **Spark**: 無料枠をこえると止まるだけで、請求は来ない。
+  - **Blaze**: 無料枠をこえた分が課金される。使うなら、必ず予算アラートを付ける。
+- Google Cloud コンソール →「お支払い」→「予算とアラート」→ 予算を作る（例: 月500円。50%・90%・100%でメール）。**予算は通知だけで、自動では止まらない**。
+- 使用量は Firebase コンソール → Firestore Database →「使用状況」で見られる。
+
 ## ルールを厳しくしたとき（セキュリティの見直し）
 
 `_docs/firestore.rules` は、でたらめな書きこみや、無料枠の使いきりを防ぐために、次を決めています。貼りかえたあと、**ルール プレイグラウンドで試して**、実際に1回遊んで記録が残るかも確かめてください。
