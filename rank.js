@@ -1,5 +1,5 @@
 // ランキングと記録の共通部品。ゲームのページから <script src="../rank.js"> と <script src="../firebase-config.js"> で読む。
-//   HanaRank.update(show, value) … 毎フレーム呼んでよい。show が false→true になった瞬間に value を記録して、「ランキング」ボタンを出す
+//   HanaRank.update(show, value, also) … 毎フレーム呼んでよい。show が false→true になった瞬間に value を記録して、「ランキング」ボタンを出す。also が true の間も、ボタンだけ出す（タイトル画面など）
 //   HanaRank.submit(value)       … すぐに記録する
 //   HanaRank.open()              … ランキングの画面を開く
 // 記録は、いつもこの端末に保存する（今日・今週・今月・通算のベスト）。
@@ -177,13 +177,14 @@
     });
     renderList();
   }
-  function update(show, value) {
+  function update(show, value, also) {
     if (!btn) { css(); btn = document.createElement('button'); btn.id = 'hrBtn'; btn.type = 'button'; btn.hidden = true; btn.textContent = '🏆 ランキング';
       ['pointerdown', 'pointerup', 'touchstart', 'mousedown'].forEach(ev => btn.addEventListener(ev, e => e.stopPropagation()));
       btn.addEventListener('click', e => { e.stopPropagation(); open(); }); document.body.appendChild(btn); }
-    if (show && !lastShow && typeof value === 'number') submit(value);
+    if (show && !lastShow && typeof value === 'number' && (G.dir === 'asc' || value > 0)) submit(value);   // 0点は記録しない
     lastShow = !!show;
-    if (show !== shown) { shown = show; btn.hidden = !show; }
+    const vis = !!show || !!also;
+    if (vis !== shown) { shown = vis; btn.hidden = !vis; }
   }
   window.HanaRank = { update, submit, open, id, myBest, fmt: fmtV };
 })();

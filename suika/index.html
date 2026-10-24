@@ -480,7 +480,7 @@
     $('ovText').innerHTML = text;
     $('ovBtn').textContent = btn;
     $('ovImg').src = win ? '../parts/home.png' : '../parts/home.png';
-    $('ovShare').hidden = state !== 'over'; $('ovRank').hidden = state !== 'over';
+    $('ovShare').hidden = state !== 'over'; $('ovRank').hidden = state !== 'over' && state !== 'title';
     ov.classList.add('show');
   }
   function gameOver() {

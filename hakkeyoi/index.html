@@ -280,7 +280,7 @@
     toList.hidden = !(state === 'title' || state === 'final');
     const rk = RANKS[finalRank] || RANKS[0];
     HanaShare.update(showEnd, `はっけよい！はなりきし 平均 ${avgMs}ms【${rk.name}】（最速 ${tries.length ? Math.min(...tries) : 0}ms）`);
-    HanaRank.update(showEnd, avgMs);
+    HanaRank.update(showEnd, avgMs, state === 'title');
     requestAnimationFrame(frame);
   }
   cv.addEventListener('pointerdown', e => {

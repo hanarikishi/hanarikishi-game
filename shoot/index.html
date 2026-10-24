@@ -310,7 +310,7 @@
     t += dt;
     toList.hidden = !(scene === 'title' || scene === 'select' || scene === 'over' || scene === 'rules');
     HanaShare.update(scene === 'over' || (scene === 'clear' && mode === 'stage'), scene === 'over' ? `はなりきしシュートで ${score}点！` : `はなりきしシュートの ${Math.floor(stageNo / PER) + 1}-${stageNo % PER + 1} をクリア！ ★${starsGot}`);
-    HanaRank.update(scene === 'over', score);
+    HanaRank.update(scene === 'over', score, scene === 'title');
     if (scene !== 'play' && scene !== 'clear' && scene !== 'fail' && scene !== 'over') return;
     endT += dt;
     stageT += dt;

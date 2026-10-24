@@ -457,7 +457,7 @@
   function frame(now) {
     toList.hidden = state === 'play';
     HanaShare.update(state === 'over', `はなりきしブロック崩しで ${score}点！`);
-    HanaRank.update(state === 'over', score);
+    HanaRank.update(state === 'over', score, state === 'ready' && atStart);
     const dt = Math.min(0.033, (now - last) / 1000 || 0); last = now;
     update(dt); draw(); requestAnimationFrame(frame);
   }

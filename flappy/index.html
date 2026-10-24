@@ -372,7 +372,7 @@
   function frame(t) {
     toList.hidden = !(state !== 'play');
     HanaShare.update(state === 'over', `はなりきしフラッピーで ${score}点！`);
-    HanaRank.update(state === 'over', score);
+    HanaRank.update(state === 'over', score, state === 'ready');
     const dt = Math.min(0.033, (t - last) / 1000 || 0);
     last = t;
     update(dt);

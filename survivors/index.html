@@ -1436,7 +1436,7 @@
   function frame(t) {
     toList.hidden = !(state === 'title' || state === 'over' || state === 'win' || state === 'pause');
     HanaShare.update(state === 'over' || state === 'win', `はなりきしサバイバーズで ${state === 'win' ? '生き残った！' : fmt(gt) + ' 生き残り、'}撃破${kills}体！`);
-    HanaRank.update(state === 'over' || state === 'win', Math.floor(gt));
+    HanaRank.update(state === 'over' || state === 'win', Math.floor(gt), state === 'title');
     const raw = (t - last) / 1000 || 0;
     const dt = Math.min(0.033, raw);
     last = t;
