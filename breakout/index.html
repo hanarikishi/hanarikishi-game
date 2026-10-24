@@ -53,21 +53,8 @@
   const W = 420, H = 700;
   const BEST_KEY = 'sumo-breakout-best';
 
-  // 番付（全ゲーム共通）。from は番付が上がる得点
-  const RANKS = [
-    { name: '前相撲', from: 0,   body: '#f1efe8', belt: '#111111' },
-    { name: '序の口', from: 3,   body: '#f7e3bd', belt: '#111111' },
-    { name: '序二段', from: 7,   body: '#bfe4f6', belt: '#111111' },
-    { name: '三段目', from: 12,  body: '#c9eaa5', belt: '#111111' },
-    { name: '幕下',   from: 18,  body: '#f8cfe0', belt: '#111111' },
-    { name: '十両',   from: 26,  body: '#ffd699', belt: '#e65100' },
-    { name: '前頭',   from: 36,  body: '#dcc4f2', belt: '#6a1b9a' },
-    { name: '小結',   from: 48,  body: '#ffb3a1', belt: '#b71c1c' },
-    { name: '関脇',   from: 62,  body: '#b9e3d3', belt: '#7a4a00' },
-    { name: '大関',   from: 78,  body: '#ff9a3c', belt: '#14507a' },
-    { name: '横綱',   from: 100, body: '#ffee00', belt: '#1f5c00' },
-  ];
-  const rankOf = s => { let l = 0; RANKS.forEach((r, i) => { if (s >= r.from) l = i; }); return l; };
+  // 力士の色は最初から横綱
+  const RANKS = [{ name: '横綱', body: '#ffee00', belt: '#1f5c00' }];
 
   // ---- 画像（はなりきしの絵は ../parts/ に共通で置いてある） ----
   const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
@@ -132,14 +119,14 @@
   };
   // 面のかたち。11列。 . はなし
   const LEVELS = [
-    ['sssssssssss', 'rrrrrrrrrrr', 'yyyyyyyyyyy', 'bbbbbbbbbbb', 'ppppppppppp', 'ggggggggggg'],
+    ['sssssssssss', '.rrrrrrrrr.', '.yyyyyyyyy.', '.bbbbbbbbb.', '.ppppppppp.', '.ggggggggg.'],
     ['...ggggg...', '..bbbbbbb..', '.rrrrrrrrr.', 'yyyyyyyyyyy', '.ppppppppp.', '..ooooooo..', '...ccccc...'],
     ['d.d.d.d.d.d', 'rrrrrrrrrrr', 'ooooooooooo', 'd.d.d.d.d.d', 'yyyyyyyyyyy', 'ggggggggggg', 'bbbbbbbbbbb'],
-    ['p.p.p.p.p.p', '.c.c.c.c.c.', 'y.y.y.y.y.y', '.g.g.g.g.g.', 'r.r.r.r.r.r', '.b.b.b.b.b.', 's.s.s.s.s.s'],
+    ['ppppppppppp', '..c.c.c.c..', '.y.y.y.y.y.', '..g.g.g.g..', '.r.r.r.r.r.', '..b.b.b.b..', '.s.s.s.s.s.'],
     ['...yyyyy...', '..yyyyyyy..', '.yybyyybyy.', '.yyyyyyyyy.', '.yyyrrryyy.', '..yyyyyyy..', '...yyyyy...', 'sssssssssss'],
     ['sssssssssss', 'b.........b', '.b.......b.', '..b.....b..', '...g...g...', '....g.g....', '.....y.....'],
     ['ppppppppppp', 'rrrrrrrrrrr', 'd.ooooooo.d', 'd.yyyyyyy.d', 'd.ggggggg.d', 'd.ccccccc.d', 'd.bbbbbbb.d'],
-    ['sssssssssss', 'srrrrrrrrrs', 'syyyyyyyyys', 'sgggggggggs', 'sbbbbbbbbbs', 'sssssssssss'],
+    ['sssssssssss', '.rrrrrrrrr.', '.yyyyyyyyy.', '.ggggggggg.', '.bbbbbbbbb.', 'sssssssssss'],
   ];
   // パワーアップ（カプセル）
   const POWERS = {
@@ -149,6 +136,7 @@
     C: { c: '#28c840', name: 'キャッチ！タップで発射', w: 2 },
     S: { c: '#ff8c1a', name: 'スロー', w: 2 },
     T: { c: '#c040e0', name: 'つらぬき弾！', w: 2 },
+    X: { c: '#ff5a1a', name: '爆弾弾！まわりもふっとぶ', w: 3 },
     P: { c: '#9a9a9a', name: '1UP！', w: 1 },
   };
   const POWER_BAG = Object.entries(POWERS).flatMap(([k, v]) => Array(v.w).fill(k));
@@ -172,10 +160,10 @@
       bricks.push({ x: BX0 + c * BW, y: TOP + r * BH, ch, hp: hpOf(ch), flash: 0 });
     }));
   }
-  const clearFx = () => { fx = { laser: 0, wide: 0, catch: 0, pierce: 0, slow: 0 }; caps = []; bolts = []; };
+  const clearFx = () => { fx = { laser: 0, wide: 0, catch: 0, pierce: 0, slow: 0, bomb: 0 }; caps = []; bolts = []; };
   function ready() {
     state = 'ready'; boost = 0; clearFx();
-    balls = [{ x: pad.x, y: PAD_Y - BALL_R, vx: 0, vy: 0, rot: 0, stuck: true, off: 0 }];
+    balls = [{ x: pad.x, y: PAD_Y - BALL_R, vx: 0, vy: 0, rot: 0, stuck: true, off: 0, chain: 0 }];
   }
   function reset() {
     score = 0; level = 1; lives = 3; parts = []; shake = 0; hitT = 0; msg = 1.6; toast = { s: '', t: 0 }; kills = 0;
@@ -205,7 +193,7 @@
   const say = s => { toast = { s, t: 1.6 }; };
   function addBall(from, ang) {
     const sp = Math.hypot(from.vx, from.vy) || spd(), a = Math.atan2(from.vy, from.vx) + ang;
-    balls.push({ x: from.x, y: from.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, rot: 0, stuck: false, off: 0 });
+    balls.push({ x: from.x, y: from.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, rot: 0, stuck: false, off: 0, chain: 0 });
   }
   function givePower(k) {
     say(POWERS[k].name); beep(660, 0.1, 'triangle', 0.06, 440);
@@ -221,6 +209,7 @@
     if (k === 'C') { fx.catch = 16; fx.laser = 0; }
     if (k === 'S') fx.slow = 10;
     if (k === 'T') fx.pierce = 7;
+    if (k === 'X') fx.bomb = 10;
     if (k === 'P') lives = Math.min(5, lives + 1);
   }
   function tap() {
@@ -229,14 +218,22 @@
   }
 
   // ブロックをこわす（dmg だけ減らす）
-  function damage(b, dmg) {
+  function damage(b, dmg, ball, boom) {
     if (b.ch === 'd') { beep(900, 0.04, 'square', 0.03); b.flash = 0.2; return; }
     b.hp -= dmg; b.flash = 0.15; shake = 1.5;
+    let pitch = 0;
+    if (ball) { ball.chain++; pitch = Math.min(ball.chain, 24) * 38; if (ball.chain % 5 === 0) say(`${ball.chain} HIT!`); }
     if (b.hp <= 0) {
-      score += b.ch === 's' ? 50 * level : COLORS[b.ch].pt; kills++; pop(b);
-      beep(360 + (b.y - TOP) * -1 + 200, 0.06, 'square', 0.04);
-      if (Math.random() < 0.2) caps.push({ x: b.x + BW / 2, y: b.y + BH / 2, k: POWER_BAG[(Math.random() * POWER_BAG.length) | 0] });
-    } else beep(820, 0.05, 'square', 0.035);
+      score += (b.ch === 's' ? 50 * level : COLORS[b.ch].pt) + (ball ? Math.min(ball.chain, 10) * 10 : 0); kills++; pop(b);
+      beep(420 + pitch, 0.06, 'square', 0.04);
+      if (fx.bomb > 0 && !boom) bombAt(b);
+      if (Math.random() < 0.3) caps.push({ x: b.x + BW / 2, y: b.y + BH / 2, k: POWER_BAG[(Math.random() * POWER_BAG.length) | 0] });
+    } else beep(820 + pitch, 0.05, 'square', 0.035);
+  }
+  // 爆弾弾: こわれたブロックのまわりも1ダメージ
+  function bombAt(b) {
+    for (const k of bricks) if (k !== b && k.hp > 0 && k.ch !== 'd' && Math.abs(k.x - b.x) <= BW * 1.1 && Math.abs(k.y - b.y) <= BH * 1.1) damage(k, 1, null, true);
+    shake = 4; beep(120, 0.2, 'sawtooth', 0.05, -60);
   }
 
   // ボール1個の1歩ぶんの動き
@@ -249,7 +246,7 @@
     // パドル（当たった位置で角度が変わる）
     if (ball.vy > 0 && ball.y + r >= PAD_Y && ball.y - r <= PAD_Y + PAD_H && Math.abs(ball.x - pad.x) <= pad.w / 2 + r * 0.5) {
       const off = ball.x - pad.x, k = Math.max(-1, Math.min(1, off / (pad.w / 2)));
-      ball.y = PAD_Y - r; hitT = 0.15; boost = Math.min(boost + 3, 110);
+      ball.y = PAD_Y - r; hitT = 0.15; ball.chain = 0; boost = Math.min(boost + 3, 110);
       beep(260, 0.05, 'square', 0.05);
       if (fx.catch > 0) { ball.stuck = true; ball.off = off; ball.vx = ball.vy = 0; return; }
       const a = (-90 + k * 62) * Math.PI / 180;
@@ -263,11 +260,11 @@
       const ox = ball.x - cx, oy = ball.y - cy;
       if (ox * ox + oy * oy >= r * r) continue;
       hitT = 0.12;
-      if (fx.pierce > 0 && b.ch !== 'd') { damage(b, 99); continue; }
+      if (fx.pierce > 0 && b.ch !== 'd') { damage(b, 99, ball); continue; }
       if (ox === 0 && oy === 0) { ball.vy = -ball.vy; }
       else if (Math.abs(ox) > Math.abs(oy)) { ball.vx = ox > 0 ? Math.abs(ball.vx) : -Math.abs(ball.vx); ball.x = cx + Math.sign(ox) * r; }
       else { ball.vy = oy > 0 ? Math.abs(ball.vy) : -Math.abs(ball.vy); ball.y = cy + Math.sign(oy) * r; }
-      damage(b, 1);
+      damage(b, 1, ball);
       return;
     }
   }
@@ -375,7 +372,7 @@
   }
 
   function draw() {
-    const g = ctx, lv = rankOf(Math.floor(kills / 2));
+    const g = ctx, lv = 0;
     g.save();
     if (shake > 0) g.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
     // 背景（面ごとに色が変わる）
@@ -405,6 +402,7 @@
     // ボール（転がるはなりきし）
     if (state !== 'over') balls.forEach(b => {
       if (fx.pierce > 0) { g.fillStyle = 'rgba(200,80,255,.35)'; g.beginPath(); g.arc(b.x, b.y, BALL_R + 7 + Math.sin(t * 20) * 1.5, 0, 6.28); g.fill(); }
+      if (fx.bomb > 0) { g.fillStyle = 'rgba(255,110,30,.4)'; g.beginPath(); g.arc(b.x, b.y, BALL_R + 7 + Math.sin(t * 20) * 1.5, 0, 6.28); g.fill(); }
       drawSumo(g, lv, hitT > 0 ? 'hit' : 'normal', b.x, b.y, BALL_R + 4, b.rot);
     });
 
@@ -412,12 +410,12 @@
     g.fillStyle = '#0b0f1a'; g.fillRect(0, 0, W, 58);
     g.strokeStyle = '#8fa0b8'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 58); g.lineTo(W, 58); g.stroke();
     text(g, 'SCORE', 14, 16, 12, '#ff6a6a', '#000', 'left'); text(g, String(score), 14, 40, 22, '#fff', '#000', 'left');
-    text(g, `ROUND ${level}`, W / 2, 20, 15, '#9fd0ff', '#000'); text(g, RANKS[lv].name, W / 2, 42, 17, '#ffe066', '#000');
+    text(g, `ROUND ${level}`, W / 2, 20, 15, '#9fd0ff', '#000');
     text(g, 'HIGH', W - 14, 16, 12, '#ff6a6a', '#000', 'right'); text(g, String(Math.max(best, score)), W - 14, 40, 18, '#fff', '#000', 'right');
     for (let i = 0; i < lives - 1; i++) drawSumo(g, lv, 'normal', 16 + i * 24, 682, 9);
     // 効果の残り
     let ix = W - 14;
-    for (const [k, key] of [['L', 'laser'], ['E', 'wide'], ['C', 'catch'], ['S', 'slow'], ['T', 'pierce']]) if (fx[key] > 0) {
+    for (const [k, key] of [['L', 'laser'], ['E', 'wide'], ['C', 'catch'], ['S', 'slow'], ['T', 'pierce'], ['X', 'bomb']]) if (fx[key] > 0) {
       g.globalAlpha = fx[key] < 3 && Math.floor(t * 6) % 2 ? .35 : 1;
       drawCap(g, { x: ix - 16, y: 680, k }); ix -= 38; g.globalAlpha = 1;
     }
