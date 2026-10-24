@@ -65,9 +65,12 @@
     const f = await fb(); if (!f) return;
     const { F, db, auth } = f, ref = F.doc(db, 'ranks', id, keys()[p], auth.currentUser.uid);
     try {
-      const cur = await F.getDoc(ref);
-      if (cur.exists() && !better(v, cur.data().v)) return;
-      await F.setDoc(ref, { name: getName().slice(0, 12), v, dir: G.dir, t: F.serverTimestamp() });
+      const cur = await F.getDoc(ref), nm = getName().slice(0, 12);
+      if (cur.exists() && !better(v, cur.data().v)) {
+        if (cur.data().name !== nm) await F.setDoc(ref, { name: nm, v: cur.data().v, dir: cur.data().dir || G.dir, t: F.serverTimestamp() });   // 記録はそのままで、名前だけ かえる
+        return;
+      }
+      await F.setDoc(ref, { name: nm, v, dir: G.dir, t: F.serverTimestamp() });
     } catch (e) { console.warn('[rank] 記録を送れません', e); }
   }
   async function fetchTop(p) {
@@ -168,7 +171,7 @@
           const n = v.trim().slice(0, 12); if (!n) break;
           const why = ngReason(n);
           if (why) { msg = 'その名前は使えません。別の名前にしてください\n（下ネタ・乱暴な言葉・Fワードなどは禁止です）'; def = ''; continue; }
-          setName(n); e.target.textContent = '名前: ' + n; break;
+          setName(n); e.target.textContent = '名前: ' + n; syncRemote(); break;   // いまの記録にも 新しい名前を反映
         }
       }
     });
