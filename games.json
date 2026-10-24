@@ -87,15 +87,5 @@
     "tags": ["スポーツ"],
     "added": "2026-10-20",
     "best": { "key": "sumo-shoot-best", "type": "number", "unit": "点" }
-  },
-  {
-    "id": "slayer",
-    "title": "はなりきしスレイヤー",
-    "desc": "走って、跳んで、倒して、昇進。放置でも進む放置ランナー",
-    "path": "slayer/",
-    "thumb": "thumbs/slayer.jpg",
-    "tags": ["放置"],
-    "added": "2026-10-24",
-    "best": { "key": "sumo-slayer-best", "type": "number", "unit": "昇進" }
   }
 ]
