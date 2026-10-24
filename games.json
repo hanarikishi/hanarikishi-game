@@ -9,64 +9,24 @@
     "added": "2026-10-24"
   },
   {
-    "id": "breakout",
-    "title": "はなりきしブロック崩し",
-    "desc": "はなりきしの弾で崩す本格ブロック崩し。分裂・レーザーなどのパワーアップつき",
-    "path": "breakout/",
-    "thumb": "thumbs/breakout.jpg",
-    "tags": ["アクション"],
-    "added": "2026-10-21",
-    "best": { "key": "sumo-breakout-best", "type": "number", "unit": "点" }
-  },
-  {
-    "id": "shoot",
-    "title": "はなりきしシュート",
-    "desc": "引っぱって、はなしてシュート。横画面で80ステージ",
-    "path": "shoot/",
-    "thumb": "thumbs/shoot.jpg",
-    "tags": ["スポーツ"],
-    "added": "2026-10-20",
-    "best": { "key": "sumo-shoot-best", "type": "number", "unit": "点" }
-  },
-  {
-    "id": "shogi",
-    "title": "はなりきし将棋",
-    "desc": "5×8の将棋。相手の駒は何か分からない",
-    "path": "shogi/",
-    "thumb": "thumbs/shogi.jpg",
-    "tags": ["ボード"],
-    "added": "2026-10-20",
-    "best": { "key": "sumo-shogi-best", "type": "number", "unit": "連勝" }
+    "id": "suika",
+    "title": "はなりきし出世",
+    "desc": "同じ力士をぶつけて合体、横綱を目指すパズル",
+    "path": "suika/",
+    "thumb": "thumbs/suika.jpg",
+    "tags": ["パズル"],
+    "added": "2026-10-16",
+    "best": { "key": "sumo-suika-best", "type": "number", "unit": "点" }
   },
   {
     "id": "survivors",
     "title": "はなりきしサバイバーズ",
-    "desc": "自動攻撃で敵の大群を生き残れ。10分で横綱",
+    "desc": "自動攻撃で敵の大群を生き残れ。30分で横綱",
     "path": "survivors/",
     "thumb": "thumbs/survivors.jpg",
     "tags": ["サバイバル", "アクション"],
     "added": "2026-10-19",
     "best": { "key": "sumo-surv-best", "type": "time", "label": "最長" }
-  },
-  {
-    "id": "stack",
-    "title": "はなりきしスタック",
-    "desc": "力士を乗せたブロックをぴったり積み上げる",
-    "path": "stack/",
-    "thumb": "thumbs/stack.jpg",
-    "tags": ["積み上げ", "アクション"],
-    "added": "2026-10-19",
-    "best": { "key": "sumo-stack-best", "type": "number", "unit": "段" }
-  },
-  {
-    "id": "crossy",
-    "title": "はなりきしクロッシー",
-    "desc": "車・川・電車をわたって前へ。ワシに注意",
-    "path": "crossy/",
-    "thumb": "thumbs/crossy.jpg",
-    "tags": ["アクション"],
-    "added": "2026-10-19",
-    "best": { "key": "sumo-crossy-best", "type": "number", "unit": "歩" }
   },
   {
     "id": "flappy",
@@ -79,13 +39,53 @@
     "best": { "key": "sumo-flappy-best", "type": "number", "unit": "点" }
   },
   {
-    "id": "suika",
-    "title": "はなりきし出世",
-    "desc": "同じ力士をぶつけて合体、横綱を目指すパズル",
-    "path": "suika/",
-    "thumb": "thumbs/suika.jpg",
-    "tags": ["パズル"],
-    "added": "2026-10-16",
-    "best": { "key": "sumo-suika-best", "type": "number", "unit": "点" }
+    "id": "breakout",
+    "title": "はなりきしブロック崩し",
+    "desc": "はなりきしの弾で崩す本格ブロック崩し。分裂・レーザーなどのパワーアップつき",
+    "path": "breakout/",
+    "thumb": "thumbs/breakout.jpg",
+    "tags": ["アクション"],
+    "added": "2026-10-21",
+    "best": { "key": "sumo-breakout-best", "type": "number", "unit": "点" }
+  },
+  {
+    "id": "stack",
+    "title": "はなりきしスタック",
+    "desc": "力士を乗せたブロックをぴったり積み上げる",
+    "path": "stack/",
+    "thumb": "thumbs/stack.jpg",
+    "tags": ["積み上げ", "アクション"],
+    "added": "2026-10-19",
+    "best": { "key": "sumo-stack-best", "type": "number", "unit": "段" }
+  },
+  {
+    "id": "shogi",
+    "title": "はなりきし将棋",
+    "desc": "5×8の将棋。相手の駒は何か分からない",
+    "path": "shogi/",
+    "thumb": "thumbs/shogi.jpg",
+    "tags": ["ボード"],
+    "added": "2026-10-20",
+    "best": { "key": "sumo-shogi-best", "type": "number", "unit": "連勝" }
+  },
+  {
+    "id": "crossy",
+    "title": "はなりきしクロッシー",
+    "desc": "車・川・電車をわたって前へ。ワシに注意",
+    "path": "crossy/",
+    "thumb": "thumbs/crossy.jpg",
+    "tags": ["アクション"],
+    "added": "2026-10-19",
+    "best": { "key": "sumo-crossy-best", "type": "number", "unit": "歩" }
+  },
+  {
+    "id": "shoot",
+    "title": "はなりきしシュート",
+    "desc": "引っぱって、はなしてシュート。横画面で80ステージ",
+    "path": "shoot/",
+    "thumb": "thumbs/shoot.jpg",
+    "tags": ["スポーツ"],
+    "added": "2026-10-20",
+    "best": { "key": "sumo-shoot-best", "type": "number", "unit": "点" }
   }
 ]

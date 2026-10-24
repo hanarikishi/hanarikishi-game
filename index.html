@@ -137,7 +137,7 @@
   }
 
   fetch('games.json', { cache: 'no-cache' }).then(r => r.json()).then(list => {
-    games = list.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));   // 新しい順
+    games = list.slice();   // games.json に書いた順に並べる
     renderChips(); render();
   }).catch(() => { $('empty').hidden = false; $('empty').textContent = 'ゲーム一覧を読み込めませんでした'; });
 
