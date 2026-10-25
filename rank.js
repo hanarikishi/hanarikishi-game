@@ -18,7 +18,8 @@
   };
   const id = (location.pathname.match(/\/([^\/]+)\/(?:index\.html)?$/) || [])[1] || 'game';
   const G = GAMES[id] || { title: id, unit: '', dir: 'desc' };
-  const rid = G.key || id;   // 端末の記録と、みんなの順位の保存先の名前
+  const RESET_TAG = '_r2';   // 全部の記録をリセットしたいときは、これを _r3 … と変える（保存先の名前が新しくなる。ルールの gameOk/maxOf も同じ名前に）
+  const rid = (G.key || id) + RESET_TAG;   // 端末の記録と、みんなの順位の保存先の名前
   const fmtV = v => G.fmt ? G.fmt(v) : `${Math.round(v * 100) / 100}${G.unit}`;
   const better = (a, b) => G.dir === 'asc' ? a < b : a > b;
   // ニックネームの禁止ワード（下ネタ・Fワードなど）は「どすこい！はなりきし」の四股名と同じ。ngwords.js を、あとから読みこむ

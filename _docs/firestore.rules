@@ -5,18 +5,19 @@ rules_version = '2';
 // 記録は 1人（匿名ログインの uid）につき、ゲームごと・期間ごとに1件。いまより良いときだけ書きかえられる。
 //   ゲームの id と、点数の範囲、期間の形は、ここで決めたものだけ通る（でたらめな書きこみで 無料枠を使いきられないように）。
 //   新しいゲームの順位を足すときは、gameOk() と maxOf() に足す。
+//   名前の終わりの _r2 は「全部の記録をリセットした回」の印（rank.js の RESET_TAG と同じにする）。もう一度リセットするときは _r3 に変える。
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function gameOk(g) {
-      return g in ['suika', 'flappy', 'crossy', 'stack', 'breakout', 'survivors_lv', 'shoot', 'hakkeyoi'];
+      return g in ['suika_r2', 'flappy_r2', 'crossy_r2', 'stack_r2', 'breakout_r2', 'survivors_lv_r2', 'shoot_r2', 'hakkeyoi_r2'];
     }
     function maxOf(g) {
-      return {'suika': 1000000, 'flappy': 10000, 'crossy': 10000, 'stack': 5000, 'breakout': 1000000,
-              'survivors_lv': 1000, 'shoot': 1000000, 'hakkeyoi': 3000}[g];
+      return {'suika_r2': 1000000, 'flappy_r2': 10000, 'crossy_r2': 10000, 'stack_r2': 5000, 'breakout_r2': 1000000,
+              'survivors_lv_r2': 1000, 'shoot_r2': 1000000, 'hakkeyoi_r2': 3000}[g];
     }
-    function minOf(g) { return g == 'hakkeyoi' ? 80 : 1; }                  // はっけよいは、人にはできない速さをはじく
-    function dirOf(g) { return g == 'hakkeyoi' ? 'asc' : 'desc'; }          // 低いほど良い／高いほど良い
+    function minOf(g) { return g == 'hakkeyoi_r2' ? 80 : 1; }                  // はっけよいは、人にはできない速さをはじく
+    function dirOf(g) { return g == 'hakkeyoi_r2' ? 'asc' : 'desc'; }          // 低いほど良い／高いほど良い
     function pad2(n) { return n < 10 ? '0' + string(n) : string(n); }
     function periodOk(p) {
       let t = request.time + duration.value(9, 'h');                         // 日本時間
