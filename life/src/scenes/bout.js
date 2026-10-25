@@ -9,6 +9,7 @@ const BOUT_LIGHT_HIT = 0.2;
 const BOUT_READY_MS = 1500;   // 「はっけよーーい」を言い切るまで
 const BOUT_HIT_FACE_MS = 400;   // ぶつかった顔を出しておく長さ
 // 幕下・十両の相手の能力：場所開始時の自分を偏差値50として、ばらつかせる（取組の中だけ。名簿の能力は変えない）
+const BOUT_OPP_BOOST = { makushita: 1.08, juryo: 1.15 };   // 相手の平均は、自分より これだけ強い（幕下 +8%、十両 +15%）
 const BOUT_HENSACHI_SD = 0.12;        // 力・技・速さのばらつき（偏差値10 ＝ 自分の能力の12%）
 const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
@@ -68,7 +69,8 @@ const BoutScene = {
       b.oppRoll = b.oppRoll || {};
       if (!b.oppRoll[opp.shikona]) {
         const z = () => Math.max(-2, Math.min(2, (Math.random() + Math.random() + Math.random() - 1.5) * 2));   // ほぼ正規分布（±2まで）
-        const roll = (v, sd) => Math.max(10, Math.round(v * (1 + z() * sd)));
+        const boost = BOUT_OPP_BOOST[opp.div] || 1;
+        const roll = (v, sd) => Math.max(10, Math.round(v * boost * (1 + z() * sd)));
         b.oppRoll[opp.shikona] = { chikara: roll(base.chikara, BOUT_HENSACHI_SD), waza: roll(base.waza, BOUT_HENSACHI_SD),
           hayasa: roll(base.hayasa, BOUT_HENSACHI_SD), taijuu: roll(base.taijuu, BOUT_HENSACHI_SD_WEIGHT) };
       }
