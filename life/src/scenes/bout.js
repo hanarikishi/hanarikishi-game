@@ -14,6 +14,7 @@ const BOUT_RANK_WAIT  = [1.35, 1.30, 1.25, 1.20, 1.10, 0.78, 0.75, 0.70, 0.65, 0
 const BOUT_RANK_DODGE = [0, 0, 0, 0.01, 0.03, 0.10, 0.15, 0.20, 0.25, 0.30];   // 幕内（前頭〜横綱）は、よけがうまい
 // 幕内の相手の能力（力・技・速さの平均）が自分より高いとき、相手の飛びやすさは自分の何倍か（横綱は飛びにくい）
 const BOUT_MAKUUCHI_KNOCK = { 5: 0.95, 6: 0.90, 7: 0.85, 8: 0.80, 9: 0.75 };
+const BOUT_COUNTER_FRAMES = 7;   // 幕内がよけてから攻め返すまでのフレーム数
 const BOUT_OPP_BOOST = { makushita: 1.08, juryo: 1.15 };   // 名簿で自分の番付が分からないときの、相手の強さ（幕下 +8%、十両 +15%）
 const BOUT_RANK_GAP_K = 0.0025;   // 番付が1枚上の相手ごとに、能力が +0.25%（100枚上なら +25%）。下の相手は 弱くなる
 const BOUT_RANK_GAP_MIN = -0.12, BOUT_RANK_GAP_MAX = 0.30;   // 弱くなるのは最大 -12%、強くなるのは最大 +30%
@@ -188,7 +189,7 @@ const BoutScene = {
     this.aimCurrent = null;
     this.pVel = { x: 0, y: 0 };
     this.oVel = { x: 0, y: 0 };
-    this.oKnock = 0; this.pKnock = 0;
+    this.oKnock = 0; this.pKnock = 0; this.oCounter = false;
     // 相手AI初期化
     this.oPhase = 'ready';
     this.oStagger = 0;
@@ -394,14 +395,19 @@ const BoutScene = {
             this.oVel.x += (-this.pVel.y / pSpd) * side * dodge;
             this.oVel.y += ( this.pVel.x / pSpd) * side * dodge;
             this.lastDodgeAt = performance.now();
-            this.oPhase = 'ready';
-            this.oTimer = 20;
+            if (o.banzukeRank >= 5) {   // 幕内は、よけたらすぐ攻め返す（後ろへ引かずに、少し間をおいて突進）
+              this.oPhase = 'windup'; this.oTimer = BOUT_COUNTER_FRAMES; this.oFeint = false; this.oCounter = true;
+            } else {
+              this.oPhase = 'ready';
+              this.oTimer = 20;
+            }
           }
         }
       }
     }
 
     if (this.oPhase === 'ready') {
+      this.oCounter = false;
       // 適切な間合いまでゆっくり近づき、タイマー終了でwindup へ
       const targetDist = rR * 3.8;
       if (pd > targetDist) {
@@ -418,7 +424,7 @@ const BoutScene = {
       }
     } else if (this.oPhase === 'windup') {
       // プレイヤーから離れる方向へ引き、溜めを作る
-      const pullBack = 0.020;
+      const pullBack = this.oCounter ? 0 : 0.020;   // よけたあとの攻め返しは、後ろへ引かない
       this.oVel.x -= (pdx / pd) * pullBack;
       this.oVel.y -= (pdy / pd) * pullBack;
       this.oTimer--;
@@ -428,6 +434,7 @@ const BoutScene = {
         this.oTimer = 10 + Math.floor(Math.random() * 10);
       } else if (this.oTimer <= 0) {
         // 突進開始：一気に速度を設定
+        this.oCounter = false;
         this.oPhase = 'charging';
         this.oStagger = 0;
         this.lastChargeAt = performance.now();
