@@ -10,8 +10,8 @@ const BOUT_READY_MS = 1500;   // 「はっけよーーい」を言い切るま�
 const BOUT_HIT_FACE_MS = 400;   // ぶつかった顔を出しておく長さ
 // 幕下・十両の相手の能力：場所開始時の自分を偏差値50として、ばらつかせる（取組の中だけ。名簿の能力は変えない）
 // 番付ごとの相手の動き（ざっくり。序ノ口〜横綱の順）。wait: 突進までの待ち時間の倍率（小さいほど攻めが多い）、dodge: かわす確率に足す分
-const BOUT_RANK_WAIT  = [1.35, 1.30, 1.25, 1.20, 1.10, 0.78, 0.75, 0.73, 0.72, 0.72];
-const BOUT_RANK_DODGE = [0, 0, 0, 0.01, 0.03, 0.05, 0.08, 0.11, 0.14, 0.18];
+const BOUT_RANK_WAIT  = [1.35, 1.30, 1.25, 1.20, 1.10, 0.78, 0.75, 0.70, 0.65, 0.60];
+const BOUT_RANK_DODGE = [0, 0, 0, 0.01, 0.03, 0.10, 0.15, 0.20, 0.25, 0.30];   // 幕内（前頭〜横綱）は、よけがうまい
 // 幕内の相手の能力（力・技・速さの平均）が自分より高いとき、相手の飛びやすさは自分の何倍か（横綱は飛びにくい）
 const BOUT_MAKUUCHI_KNOCK = { 5: 0.95, 6: 0.90, 7: 0.85, 8: 0.80, 9: 0.75 };
 const BOUT_OPP_BOOST = { makushita: 1.08, juryo: 1.15 };   // 名簿で自分の番付が分からないときの、相手の強さ（幕下 +8%、十両 +15%）
@@ -389,8 +389,8 @@ const BoutScene = {
           const dodge = s * (0.014 + oW * 0.008);
           // かわした先が土俵の外なら、反対側へ。どちらも外なら かわさない（かわして勝手に出ない）
           const endR = sd => Math.hypot(this.oPos.x + (-this.pVel.y / pSpd) * sd * dodge * 7.7 - cx, this.oPos.y + (this.pVel.x / pSpd) * sd * dodge * 7.7 - cy);
-          if (endR(side) > dR * 0.62) side = -side;
-          if (endR(side) <= dR * 0.62 && Math.hypot(this.oPos.x - cx, this.oPos.y - cy) < dR * 0.62) {
+          if (endR(side) > dR * 0.8) side = -side;
+          if (endR(side) <= dR * 0.8 && Math.hypot(this.oPos.x - cx, this.oPos.y - cy) < dR * 0.7) {
             this.oVel.x += (-this.pVel.y / pSpd) * side * dodge;
             this.oVel.y += ( this.pVel.x / pSpd) * side * dodge;
             this.lastDodgeAt = performance.now();
@@ -462,13 +462,14 @@ const BoutScene = {
     }
 
     // 相手の土俵際の踏ん張り：技が高いほど外へ出る勢いを殺して残る（自分と同じ式）
-    if (oDCur > dR * 0.75) {
+    const dodging = !knockFast && performance.now() - this.lastDodgeAt < 700;   // よけた直後は、勢いで自分から出ないようにする
+    if (oDCur > dR * (dodging ? 0.62 : 0.75)) {
       const nx = (this.oPos.x - cx) / oDCur, ny = (this.oPos.y - cy) / oDCur;
       const vOut = this.oVel.x * nx + this.oVel.y * ny;
       if (vOut > 0) {
         // 自分から出ないよう踏ん張る（技が低くても）。飛ばされている最中も、少しだけ粘る（技が高いほど粘る）
-        const grit = knockFast ? BOUT_OPP_STAND * (0.5 + oW) : BOUT_EDGE_BRAKE * Math.max(oW, BOUT_OPP_GRIT);
-        const brake = vOut * grit * Math.min(1, (oDCur - dR * 0.75) / (dR * 0.20));
+        const grit = knockFast ? BOUT_OPP_STAND * (0.5 + oW) : dodging ? 0.7 : BOUT_EDGE_BRAKE * Math.max(oW, BOUT_OPP_GRIT);
+        const brake = vOut * grit * Math.min(1, (oDCur - dR * (dodging ? 0.62 : 0.75)) / (dR * 0.20));
         this.oVel.x -= nx * brake; this.oVel.y -= ny * brake;
       }
     }
