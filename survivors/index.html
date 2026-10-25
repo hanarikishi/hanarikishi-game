@@ -34,9 +34,9 @@
   #toList {
     position: fixed; z-index: 5; text-decoration: none;
     left: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px);
-    bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 10px);
-    padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10;
-    background: rgba(255, 248, 220, .94); color: #3a2a10; font-weight: bold; font-size: 14px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+    padding: 6px 10px; white-space: nowrap; border-radius: 999px; border: 2px solid #3a2a10;
+    background: rgba(255, 248, 220, .94); color: #3a2a10; font-weight: bold; font-size: 12px;
   }
   #toList[hidden] { display: none; }
 </style>
@@ -110,7 +110,7 @@
   const MAX_WEAPONS = 6, MAX_PASSIVES = 6;
   // 進化: 武器が最大Lvで、組み合わせの持ち物を1つでも持っていると、レベルアップの札か宝箱で進化できる
   const EVO = {
-    hari:    { pas: 'keiko',   name: '乱れ張り手', icon: '乱', desc: '張り手が四連打になり、威力と範囲が大きく上がる' },
+    hari:    { pas: 'keiko',   name: '乱れ張り手', icon: '乱', desc: '張り手が左右上下の四方に出て、範囲も広がる' },
     shio:    { pas: 'tachiai', name: '塩ふぶき',   icon: '吹', desc: '塩が吹雪のように降りそそぎ、すべてを貫く' },
     gunbai:  { pas: 'kesho',   name: '大軍配',     icon: '大', desc: '軍配がさらに増え、ほとんど消えない' },
     tawara:  { pas: 'chikara', name: '米俵の雨',   icon: '雨', desc: '米俵が雨のように降りそそぐ' },
@@ -120,6 +120,9 @@
   };
 
   const EVO_TIME = 45;   // 進化(必殺技)の続く秒数。切れても、また進化できる
+  const RESET_CHANCE = 0.1;   // レベル最大の武器を Lv1 にもどして、土台の強さを上げる札が出る確率
+  const RESET_BONUS = 0.3;    // もどすたびに、その武器の威力が 土台として +30%
+  const EVO_CHANCE = 0.05;   // 進化できる武器が、レベルアップの札や宝箱に出る確率（毎回ではなく、たまに）
   for (const k in EVO) EVO[k].desc += `（${EVO_TIME}秒だけ）`;
 
   // ---- 敵 ----
@@ -133,11 +136,16 @@
     skelR: { name: 'あかガイコツ', hp: 85,  spd: 58, dmg: 14, r: 8,  gem: 4, art: 1.0 },
     tengu: { name: '天狗',        hp: 130, spd: 58, dmg: 16, r: 10, gem: 8, art: 1.0, dash: true },
     rivalD: { name: '大関',       hp: 320, spd: 40, dmg: 22, r: 13, gem: 12, art: 1.0 },
-    oni:   { name: '赤鬼',       hp: 450, spd: 44, dmg: 22, r: 17, gem: 25, art: 1.0, boss: true },
-    oniB:  { name: '青鬼',       hp: 1400, spd: 52, dmg: 28, r: 17, gem: 40, art: 1.0, boss: true },
+    // 鬼は 黄 → 青 → 赤 → 銀 → 金 の順に強くなる（ふだんは金鬼まで。黒鬼はさいごのボスだけ）
+    oniY:  { name: '黄鬼',       hp: 300, spd: 40, dmg: 18, r: 16, gem: 15, art: 1.0, boss: true },
+    oniB:  { name: '青鬼',       hp: 600, spd: 44, dmg: 22, r: 17, gem: 25, art: 1.0, boss: true },
+    oni:   { name: '赤鬼',       hp: 1100, spd: 48, dmg: 26, r: 17, gem: 35, art: 1.0, boss: true },
+    oniS:  { name: '銀鬼',       hp: 2000, spd: 52, dmg: 30, r: 17, gem: 45, art: 1.0, boss: true },
     oniK:  { name: '金鬼',       hp: 3600, spd: 56, dmg: 34, r: 18, gem: 60, art: 1.0, boss: true },
     oniD:  { name: '黒鬼',       hp: 9000, spd: 60, dmg: 45, r: 19, gem: 100, art: 1.0, boss: true },
   };
+
+  const ONI_SIZE = { oniY: 1.5, oniB: 1.6, oni: 1.7, oniS: 1.85, oniK: 2, oniD: 2.3 };   // 鬼の絵の大きさ
 
   // ================= ドット絵 =================
   function pix(rows, pal) {
@@ -263,7 +271,9 @@
     SPR.batB = SPR.bat.map(c => hue(c, 200));
     SPR.ghostD = mul(SPR.ghost, .55, .4, .75);
     SPR.skelR = mul(SPR.skel, 1, .5, .5);
+    SPR.oniY = mul(hue(SPR.oni, 60), 1.3, 1.3, 1);
     SPR.oniB = hue(SPR.oni, 200);
+    SPR.oniS = recolor(SPR.oni, (R, G, B) => { const v = Math.min(255, (R + G + B) / 3 * 1.5 + 45); return [v, v, Math.min(255, v + 10)]; });
     SPR.oniK = mul(hue(SPR.oni, 55), 1.15, 1.1, .5);
     SPR.oniD = mul(SPR.oni, .45, .35, .5);
     SPR.gem = [pix(['..#..', '.#b#.', '#bwb#', '.#b#.', '..#..'], { '#': '#1f6fd0', 'b': '#4aa8ff', 'w': '#cfeaff' })];
@@ -472,6 +482,8 @@
   let wallet = { coins: 0, un: {} };
   try { const w = JSON.parse(localStorage.getItem('sumo-surv-wallet') || 'null'); if (w && typeof w.coins === 'number') wallet = { coins: Math.max(0, Math.floor(w.coins)), un: (w.un && typeof w.un === 'object') ? w.un : {} }; } catch {}
   const saveWallet = () => { try { localStorage.setItem('sumo-surv-wallet', JSON.stringify(wallet)); } catch {} };
+  // 小判は拾った時点で ためる（途中でやめても なくならない）
+  function addCoins(n) { coins += n; wallet.coins += n; saveWallet(); }
   const SHOP_ON = false;   // 小判の店: いったんオフ（true にすると、ボタンと買った能力が復活する）
   const has = id => SHOP_ON && wallet.un[id] === 1;   // 買ってある能力か
   const SHOPUI = { y0: 150, h: 72, gap: 8, back: { x: 120, y: 640, w: 180, h: 40 } };
@@ -517,9 +529,10 @@
   const cnt = (lv, arr) => arr.filter(x => lv >= x).length;
   function wstat(w) {
     const st = wstatBase(w);
+    if (w.rb) st.dmg *= 1 + RESET_BONUS * w.rb;
     if (w.evo) {
       switch (w.id) {
-        case 'hari':    st.dmg *= 2; st.area *= 1.4; st.cd = 0.9; st.hits = 4; break;
+        case 'hari':    st.area *= 1.4; st.four = true; break;   // 間隔はそのまま。左右上下の四方に出る（ふだんの2方向の倍）
         case 'shio':    st.amount += 4; st.pierce = 99; st.cd *= 0.6; st.dmg *= 1.5; break;
         case 'gunbai':  st.amount += 3; st.radius *= 1.3; st.dur = 7; st.cd = 1.0; st.dmg *= 1.6; st.spin *= 1.2; break;
         case 'tawara':  st.amount *= 2; st.dmg *= 1.5; st.cd *= 0.7; break;
@@ -531,6 +544,13 @@
     return st;
   }
   const canEvolve = w => w.lv >= WEAPONS[w.id].max && !w.evo && pv(EVO[w.id].pas) >= 1;
+  function resetWeapon(id) {
+    const w = weapons.find(x => x.id === id);
+    if (!w) return;
+    w.lv = 1; w.rb = (w.rb || 0) + 1; w.evo = false;
+    banner = { text: `${WEAPONS[id].name} Lv1に もどった！ 土台 +${Math.round(RESET_BONUS * 100 * w.rb)}%`, t: 2.4, color: '#7ad0ff' };
+    sfx.chest();
+  }
   function evolve(id) {
     const w = weapons.find(x => x.id === id);
     if (w) { w.evo = true; w.evoT = EVO_TIME; }
@@ -574,9 +594,12 @@
     if (m >= 1) t.push(['skel', m < 3 ? 30 : m < 12 ? 38 : 15]);
     if (m >= 4) t.push(['rival', m < 7 ? 8 : m < 14 ? 28 : 14]);
     if (m >= 6) t.push(['batB', 25]);
-    if (m >= 6) t.push(['oni', m < 12 ? 4 : 7]);
+    if (m >= 6) t.push(['oniY', m < 12 ? 4 : 6]);
+    if (m >= 9) t.push(['oniB', 4]);
+    if (m >= 12) t.push(['oni', 4]);
+    if (m >= 16) t.push(['oniS', 4]);
+    if (m >= 20) t.push(['oniK', 4]);
     if (m >= 9) t.push(['ghostD', 22]);
-    if (m >= 13) t.push(['oniB', 6]);
     if (m >= 12) t.push(['tengu', 16]);
     if (m >= 14) t.push(['skelR', 28]);
     if (m >= 17) t.push(['rivalD', 14]);
@@ -634,7 +657,7 @@
     if (gt >= nextEvent && gt < WIN_TIME - 25) { nextEvent += 75; runEvent(evN++, m); }
     if (gt >= nextBoss && gt < WIN_TIME - 20) {
       nextBoss += 150;
-      const bt = gt < 540 ? 'oni' : gt < 1020 ? 'oniB' : gt < 1500 ? 'oniK' : 'oniD';
+      const bt = gt < 450 ? 'oniY' : gt < 750 ? 'oniB' : gt < 1050 ? 'oni' : gt < 1350 ? 'oniS' : gt < 1550 ? 'oniK' : 'oniD';
       const b = spawnAtEdge(bt, 60);
       if (b) { b.boss = true; banner = { text: ENEMY[bt].name + 'が あらわれた！', t: 2.2, color: '#ff6a5a' }; }
     }
@@ -701,15 +724,26 @@
     return list.slice(0, n).map(x => x[1]);
   }
 
-  function doHari(w, st, dir) {
+  function doHari(w, st, dir, vert) {   // vert: 0=左右 / -1=上 / 1=下
     const len = 96 * st.area * S.area, hh = 20 * st.area * S.area;
+    const cy = P.y - 4;
+    if (vert) {
+      const y0 = vert > 0 ? cy : cy - len, y1 = vert > 0 ? cy + len : cy;
+      for (const e of enemies) {
+        if (e.dead) continue;
+        if (e.y + e.r > y0 && e.y - e.r < y1 && Math.abs(e.x - P.x) < hh + e.r) dmgEnemy(e, st.dmg, P.x, P.y, 26);
+      }
+      hitProps(P.x, (y0 + y1) / 2, len / 2);
+      swings.push({ x: P.x, y: cy, dir, vert, t: 0, len, hh, evo: !!w.evo });
+      return;
+    }
     const x0 = dir > 0 ? P.x : P.x - len, x1 = dir > 0 ? P.x + len : P.x;
     for (const e of enemies) {
       if (e.dead) continue;
-      if (e.x + e.r > x0 && e.x - e.r < x1 && Math.abs(e.y - (P.y - 4)) < hh + e.r) dmgEnemy(e, st.dmg, P.x, P.y, 26);
+      if (e.x + e.r > x0 && e.x - e.r < x1 && Math.abs(e.y - cy) < hh + e.r) dmgEnemy(e, st.dmg, P.x, P.y, 26);
     }
     hitProps((x0 + x1) / 2, P.y, len / 2);
-    swings.push({ x: P.x, y: P.y - 4, dir, t: 0, len, hh });
+    swings.push({ x: P.x, y: cy, dir, t: 0, len, hh, evo: !!w.evo });
     sfx.swing();
   }
 
@@ -724,7 +758,7 @@
           w.cd = st.cd * S.cd;
           const dir = st.amount >= 2 ? P.face : (w.flip *= -1, w.flip);
           doHari(w, st, dir);
-          if (st.hits === 4) w.pending.push({ t: 0.12, dir: -dir }, { t: 0.24, dir }, { t: 0.36, dir: -dir });
+          if (st.four) { doHari(w, st, -dir); doHari(w, st, 1, -1); doHari(w, st, 1, 1); }
           else if (st.amount >= 2) w.pending.push({ t: 0.22, dir: -dir });
         }
       } else if (w.id === 'shio') {
@@ -797,7 +831,7 @@
             const R = st.radius * S.area, tx = e.x, ty = e.y;
             for (const o of enemies) if (!o.dead && Math.hypot(o.x - tx, o.y - ty) < R + o.r) dmgEnemy(o, st.dmg, tx, ty, 14);
             hitProps(tx, ty, R);
-            bolts.push({ x: tx, y: ty, t: 0.22, r: R });
+            bolts.push({ x: tx, y: ty, t: 0.22, r: R, evo: !!w.evo });
           }
           sfx.zap();
         }
@@ -882,7 +916,8 @@
       else if (Object.keys(passives).length < MAX_PASSIVES) pool.push({ kind: 'p', id, lv: 1 });
     }
     const out = [];
-    for (const w of weapons) if (canEvolve(w) && out.length < 3) out.push({ kind: 'evo', id: w.id });
+    for (const w of weapons) if (canEvolve(w) && out.length < 3 && Math.random() < EVO_CHANCE) out.push({ kind: 'evo', id: w.id });
+    for (const w of weapons) if (w.lv >= WEAPONS[w.id].max && out.length < 3 && Math.random() < RESET_CHANCE) out.push({ kind: 'reset', id: w.id });
     while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
     if (!out.length) out.push({ kind: 'heal' });
     return out;
@@ -891,7 +926,7 @@
   function openLevelUp() {
     choices = makeChoices();
     if (choices.length === 1 && choices[0].kind === 'heal') {   // えらぶものが もう無い → 自動で全回復と小判
-      P.hp = P.maxHp; coins += 50; sfx.heal();
+      P.hp = P.maxHp; addCoins(50); sfx.heal();
       banner = { text: '全回復！ 小判 +50', t: 1.4, color: '#ffe27a' };
       return;
     }
@@ -902,8 +937,9 @@
   function applyChoice(c) {
     if (c.kind === 'w') addWeapon(c.id);
     else if (c.kind === 'evo') evolve(c.id);
+    else if (c.kind === 'reset') resetWeapon(c.id);
     else if (c.kind === 'p') { passives[c.id] = (passives[c.id] || 0) + 1; recalc(); }
-    else { P.hp = P.maxHp; coins += 50; }
+    else { P.hp = P.maxHp; addCoins(50); }
     state = 'play';
     // 続けてレベルが上がっている場合
     if (xp >= xpNeed) addXp(0);
@@ -927,7 +963,6 @@
   function endGame(win) {
     state = win ? 'win' : 'over';
     over = { t: 0 };
-    wallet.coins += coins; saveWallet();   // この回の小判を ためる
     if (win) sfx.win(); else sfx.over();
     if (gt > best.time || kills > best.kills) {
       best = { time: Math.max(best.time, Math.floor(gt)), kills: Math.max(best.kills, kills) };
@@ -1043,7 +1078,7 @@
       const d = Math.hypot(P.x - it.x, P.y - it.y);
       if (d < 16 + 10 * S.magnet) {
         it.got = true;
-        if (it.kind === 'coin') { coins += 10; sfx.coin(); }
+        if (it.kind === 'coin') { addCoins(10); sfx.coin(); }
         else if (it.kind === 'magnet') { for (const g of gems) { g.mag = true; g.vac = true; } banner = { text: '経験値を すいよせた！', t: 1.6, color: '#8ac8ff' }; sfx.heal(); }
         else if (it.kind === 'bowl') { P.hp = Math.min(P.maxHp, P.hp + 30); sfx.heal(); nums.push({ x: P.x, y: P.y - 20, v: '+30', t: 0.8, heal: true }); }
         else if (it.kind === 'chest') {
@@ -1051,8 +1086,8 @@
           const c = makeChoices()[0];
           if (c && c.kind !== 'heal') {
             applyChoiceNoState(c);
-            if (c.kind !== 'evo') banner = { text: `宝箱！ ${(c.kind === 'w' ? WEAPONS : PASSIVES)[c.id].name} Lv.${c.lv}`, t: 2.4, color: '#ffe27a' };
-          } else { P.hp = P.maxHp; coins += 50; }
+            if (c.kind !== 'evo' && c.kind !== 'reset') banner = { text: `宝箱！ ${(c.kind === 'w' ? WEAPONS : PASSIVES)[c.id].name} Lv.${c.lv}`, t: 2.4, color: '#ffe27a' };
+          } else { P.hp = P.maxHp; addCoins(50); }
         }
       }
     }
@@ -1061,6 +1096,7 @@
   function applyChoiceNoState(c) {
     if (c.kind === 'w') addWeapon(c.id);
     else if (c.kind === 'evo') evolve(c.id);
+    else if (c.kind === 'reset') resetWeapon(c.id);
     else if (c.kind === 'p') { passives[c.id] = (passives[c.id] || 0) + 1; recalc(); }
   }
 
@@ -1134,11 +1170,11 @@
     } else if (e.type === 'rivalD') {
       const b = Math.floor(performance.now() / 230 + e.id) % 2;
       drawSpr(g, fl ? RIVAL2.flash : (e.flash > 0 ? RIVAL2.hit : RIVAL2.normal), x, y - b * 1.5, PX * 1.3, !faceRight);
-    } else if (e.type === 'oni' || e.type === 'oniB' || e.type === 'oniK' || e.type === 'oniD') {
-      const OS = { oni: [SPR.oni, SPR.oniW], oniB: [SPR.oniB, SPR.oniBW], oniK: [SPR.oniK, SPR.oniKW], oniD: [SPR.oniD, SPR.oniDW] }[e.type];
+    } else if (ONI_SIZE[e.type]) {
+      const OS = [SPR[e.type], SPR[e.type + 'W']];
       const b = Math.floor(performance.now() / 200) % 2;
       g.fillStyle = 'rgba(0,0,0,.3)'; g.beginPath(); g.ellipse(x, y + 16, 18, 6, 0, 0, Math.PI * 2); g.fill();
-      drawSpr(g, fl ? OS[1] : OS[0], x, y - b * 2, PX * (e.type === 'oni' ? 1.6 : e.type === 'oniB' ? 1.8 : e.type === 'oniK' ? 2 : 2.3), !faceRight);
+      drawSpr(g, fl ? OS[1] : OS[0], x, y - b * 2, PX * ONI_SIZE[e.type], !faceRight);
       // ボスの体力
       const w = 44, p = Math.max(0, e.hp / e.maxHp);
       g.fillStyle = '#000'; g.fillRect(x - w / 2 - 1, y - 38, w + 2, 6);
@@ -1149,14 +1185,15 @@
   // 張り手（突っ張り）: 腕をのばし、指を上にした手のひらで前へ突く
   function drawSwing(g, s) {
     const k = s.t / 0.22, x = sx(s.x), y = sy(s.y);
-    const sc = s.len / 96;                               // 範囲が広がると手も大きくなる
+    const sc = s.evo ? Math.min(s.len / 96, 1) * 0.7 : s.len / 96;                               // 範囲が広がると手も大きくなる
     const R = (c, rx, ry, w, h) => { g.fillStyle = c; g.fillRect(Math.round(rx), Math.round(ry), Math.round(w), Math.round(h)); };
     const O = '#6b2f12', Sk = '#f4b987', Lt = '#ffd9b0', Dk = '#d98f5a';
     // 突く→戻る（0〜0.5で突き出し、そのあと少し戻る）
     const out = k < 0.5 ? 1 - (1 - k / 0.5) ** 3 : 1 - (k - 0.5) / 0.5 * 0.25;
     const reach = (s.len - 40) * out;                    // 腕ののび
-    g.save(); g.translate(x, y); g.scale(s.dir, 1);
-    g.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+    g.save(); g.translate(x, y);
+    if (s.vert) g.rotate(s.vert * Math.PI / 2); else g.scale(s.dir, 1);
+    g.globalAlpha = (k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3) * (s.evo ? 0.35 : 1);   // 乱れ張り手は連打で画面をふさぐので、小さくうすくする
     // 勢いの線
     g.fillStyle = 'rgba(255,255,255,.7)';
     for (let i = -1; i <= 1; i++) g.fillRect(14, i * 13 * sc - 7, Math.max(0, reach - 8), 2);
@@ -1263,9 +1300,9 @@
     for (const s of swings) drawSwing(g, s);
     for (const b of bolts) {
       const x = sx(b.x), y = sy(b.y), k = b.t / 0.22;
-      g.globalAlpha = Math.min(1, k * 2);
+      g.globalAlpha = Math.min(1, k * 2) * (b.evo ? 0.35 : 1);   // 神鳴りは数が多いので、うすくして画面が見えるようにする
       g.fillStyle = 'rgba(255,255,160,.35)'; g.beginPath(); g.ellipse(x, y, b.r, b.r * 0.8, 0, 0, Math.PI * 2); g.fill();
-      g.strokeStyle = '#fffbd0'; g.lineWidth = 4; g.lineJoin = 'miter';
+      g.strokeStyle = '#fffbd0'; g.lineWidth = b.evo ? 2.5 : 4; g.lineJoin = 'miter';
       g.beginPath(); g.moveTo(x, y - 380);
       for (let i = 1; i <= 7; i++) g.lineTo(x + (i % 2 ? 1 : -1) * (14 - i * 1.5) * (0.6 + (b.x * 13 % 7) / 7), y - 380 + i * 54);
       g.lineTo(x, y); g.stroke();
@@ -1355,6 +1392,17 @@
       if (c.kind === 'heal') {
         text(g, 'ちゃんこ', x + 20, y + 30, 20, '#ff9a5c', '#000', 'left');
         text(g, '体力を全回復し 小判を50枚', x + 20, y + 62, 13, '#cfd6ff', '#000', 'left', false);
+        return;
+      }
+      if (c.kind === 'reset') {
+        const d0 = WEAPONS[c.id], w0 = weapons.find(x => x.id === c.id), rb = (w0 && w0.rb || 0) + 1;
+        g.fillStyle = 'rgba(80,170,255,.16)'; g.fillRect(x, y, CARD.w, CARD.h);
+        g.strokeStyle = '#7ad0ff'; g.lineWidth = 3; g.strokeRect(x + 1.5, y + 1.5, CARD.w - 3, CARD.h - 3);
+        iconBox(g, x + 12, y + 20, 52, d0.icon, d0.color, 0, false);
+        text(g, d0.name + ' 生まれかわり', x + 78, y + 24, 17, '#a8e0ff', '#000', 'left');
+        text(g, 'Lv1にもどす', x + CARD.w - 14, y + 24, 12, '#7ad0ff', '#000', 'right');
+        text(g, `土台の威力 +${Math.round(RESET_BONUS * 100 * rb)}%（ずっと）`, x + 78, y + 56, 13, '#d8f0ff', '#000', 'left', false);
+        text(g, 'また育てると、前より強くなる', x + 78, y + 76, 11, '#9ab8c8', '#000', 'left', false);
         return;
       }
       if (c.kind === 'evo') {
