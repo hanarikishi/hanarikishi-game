@@ -14,6 +14,9 @@ const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
 const BOUT_OPP_KNOCK_MIN = 1.0;   // 相手が飛ばされる強さの下限（力・技・重さで不利でも、これだけは飛ぶ）
 
+const BOUT_OPP_KNOCK_RATIO = 1.0;   // ぶつかった勢いのうち、相手が後ろへ飛ぶ速さの最低ライン（能力・重さに関係なく）
+const BOUT_OPP_KNOCK_FRAMES = 20;  // 飛ばされている間（このフレーム数）は、引き戻しや踏ん張りを止めて、そのまま滑らせる
+
 const BoutScene = {
   opponent:  null,
   phase:     'idle',   // idle | aiming | flying | done
@@ -166,6 +169,7 @@ const BoutScene = {
     this.aimCurrent = null;
     this.pVel = { x: 0, y: 0 };
     this.oVel = { x: 0, y: 0 };
+    this.oKnock = 0;
     // 相手AI初期化
     this.oPhase = 'ready';
     this.oStagger = 0;
@@ -413,21 +417,21 @@ const BoutScene = {
     // 速度上限
     const oSpd = Math.hypot(this.oVel.x, this.oVel.y);
     const maxOSpd = s * 0.034;
-    if (oSpd > maxOSpd) {
+    if (oSpd > maxOSpd && !(this.oKnock > 0)) {
       this.oVel.x = this.oVel.x / oSpd * maxOSpd;
       this.oVel.y = this.oVel.y / oSpd * maxOSpd;
     }
 
     // 土俵端の引き戻し（charging中は除く）
     const oDCur = Math.hypot(this.oPos.x - cx, this.oPos.y - cy);
-    if (oDCur > dR * 0.80 && this.oPhase !== 'charging') {
+    if (oDCur > dR * 0.80 && this.oPhase !== 'charging' && !(this.oKnock > 0)) {
       const pull = (oDCur - dR * 0.80) / (dR * 0.20) * 0.07;
       this.oVel.x -= (this.oPos.x - cx) / oDCur * pull;
       this.oVel.y -= (this.oPos.y - cy) / oDCur * pull;
     }
 
     // 相手の土俵際の踏ん張り：技が高いほど外へ出る勢いを殺して残る（自分と同じ式）
-    if (oDCur > dR * 0.75) {
+    if (oDCur > dR * 0.75 && !(this.oKnock > 0)) {
       const nx = (this.oPos.x - cx) / oDCur, ny = (this.oPos.y - cy) / oDCur;
       const vOut = this.oVel.x * nx + this.oVel.y * ny;
       if (vOut > 0) {
@@ -437,7 +441,8 @@ const BoutScene = {
     }
 
     this.oPos.x += this.oVel.x; this.oPos.y += this.oVel.y;
-    const oFric = this.oPhase === 'charging' ? 0.94 : 0.87;
+    const oFric = this.oPhase === 'charging' || this.oKnock > 0 ? 0.94 : 0.87;
+    if (this.oKnock > 0) this.oKnock--;
     this.oVel.x *= oFric; this.oVel.y *= oFric;
 
     // 相手の場外（余裕を持たせて判定）
@@ -510,6 +515,10 @@ const BoutScene = {
         this.pVel.y += ny * (imp / pm) * pMul;
         this.oVel.x -= nx * (imp / om) * oMul;
         this.oVel.y -= ny * (imp / om) * oMul;
+        // 能力や重さに関係なく、ぶつかった勢いのぶんは 必ず後ろへ飛ぶ（これがないと、不利な相手には動かせない）
+        const away = -(this.oVel.x * nx + this.oVel.y * ny), want = -vRel * BOUT_OPP_KNOCK_RATIO;
+        if (away < want) { this.oVel.x -= nx * (want - away); this.oVel.y -= ny * (want - away); }
+        this.oKnock = BOUT_OPP_KNOCK_FRAMES;
 
         // 相手が突進してきた衝突もプレイヤーを flying 状態にして跳ね返す
         if (this.phase === 'idle') {
