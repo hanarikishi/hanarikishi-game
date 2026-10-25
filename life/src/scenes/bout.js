@@ -13,6 +13,8 @@ const BOUT_HENSACHI_SD = 0.12;        // 力・技・速さのばらつき（偏
 const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
 
+const BOUT_OPP_GRIT = 0.7;   // 相手が自分から土俵を出ないよう踏ん張る強さの下限（飛ばされているときは効かない）
+const BOUT_KNOCK_SLOW = 1.6;   // 飛ばされた相手が、この速さより遅くなったら、端ぎわで踏ん張る（ゆっくり出ていかない）
 const BOUT_KNOCK_RATIO = 0.4;   // ぶつかった勢いの何倍の速さで、お互い後ろへ飛ぶか（自分も相手も同じ）
 const BOUT_KNOCK_MAXV = 0.006;  // 飛ぶ速さの上限（土俵の幅に対する割合。強く当たったとき用）
 const BOUT_KNOCK_MINV = 0.003;  // 飛ぶ速さの最低ライン（土俵の幅に対する割合。ゆっくり当たったとき用）
@@ -361,13 +363,18 @@ const BoutScene = {
       if (pd < rR * 4.5 && toward > s * 0.012) {
         this.dodgeRolled = true;
         if (Math.random() < 0.08 + oW * 0.30 + o.banzukeRank * 0.01) {
-          const side = Math.random() < 0.5 ? 1 : -1;   // 飛んでくる向きに直角
+          let side = Math.random() < 0.5 ? 1 : -1;   // 飛んでくる向きに直角
           const dodge = s * (0.020 + oW * 0.012);
-          this.oVel.x += (-this.pVel.y / pSpd) * side * dodge;
-          this.oVel.y += ( this.pVel.x / pSpd) * side * dodge;
-          this.lastDodgeAt = performance.now();
-          this.oPhase = 'ready';
-          this.oTimer = 20;
+          // かわした先が土俵の外なら、反対側へ。どちらも外なら かわさない（かわして勝手に出ない）
+          const endR = sd => Math.hypot(this.oPos.x + (-this.pVel.y / pSpd) * sd * dodge * 7.7 - cx, this.oPos.y + (this.pVel.x / pSpd) * sd * dodge * 7.7 - cy);
+          if (endR(side) > dR * 0.78) side = -side;
+          if (endR(side) <= dR * 0.78) {
+            this.oVel.x += (-this.pVel.y / pSpd) * side * dodge;
+            this.oVel.y += ( this.pVel.x / pSpd) * side * dodge;
+            this.lastDodgeAt = performance.now();
+            this.oPhase = 'ready';
+            this.oTimer = 20;
+          }
         }
       }
     }
@@ -418,25 +425,26 @@ const BoutScene = {
     // 速度上限
     const oSpd = Math.hypot(this.oVel.x, this.oVel.y);
     const maxOSpd = s * 0.034;
-    if (oSpd > maxOSpd && !(this.oKnock > 0)) {
+    const knockFast = this.oKnock > 0 && oSpd > BOUT_KNOCK_SLOW;   // 飛ばされて勢いがあるうちだけ。ゆっくりになったら、端ぎわで止まる
+    if (oSpd > maxOSpd && !knockFast) {
       this.oVel.x = this.oVel.x / oSpd * maxOSpd;
       this.oVel.y = this.oVel.y / oSpd * maxOSpd;
     }
 
     // 土俵端の引き戻し（charging中は除く）
     const oDCur = Math.hypot(this.oPos.x - cx, this.oPos.y - cy);
-    if (oDCur > dR * 0.80 && this.oPhase !== 'charging' && !(this.oKnock > 0)) {
+    if (oDCur > dR * 0.80 && (this.oPhase !== 'charging' || oDCur > dR * 0.88) && !knockFast) {   // 自分から出ないように（突進中でも、端ぎわでは引き戻す）
       const pull = (oDCur - dR * 0.80) / (dR * 0.20) * 0.07;
       this.oVel.x -= (this.oPos.x - cx) / oDCur * pull;
       this.oVel.y -= (this.oPos.y - cy) / oDCur * pull;
     }
 
     // 相手の土俵際の踏ん張り：技が高いほど外へ出る勢いを殺して残る（自分と同じ式）
-    if (oDCur > dR * 0.75 && !(this.oKnock > 0)) {
+    if (oDCur > dR * 0.75 && !knockFast) {
       const nx = (this.oPos.x - cx) / oDCur, ny = (this.oPos.y - cy) / oDCur;
       const vOut = this.oVel.x * nx + this.oVel.y * ny;
       if (vOut > 0) {
-        const brake = vOut * BOUT_EDGE_BRAKE * oW * Math.min(1, (oDCur - dR * 0.75) / (dR * 0.20));
+        const brake = vOut * BOUT_EDGE_BRAKE * Math.max(oW, BOUT_OPP_GRIT) * Math.min(1, (oDCur - dR * 0.75) / (dR * 0.20));   // 技が低くても、自分から出ないよう踏ん張る
         this.oVel.x -= nx * brake; this.oVel.y -= ny * brake;
       }
     }
@@ -506,6 +514,14 @@ const BoutScene = {
         this.oVel.x -= nx * kick;
         this.oVel.y -= ny * kick;
         this.oKnock = 1; this.pKnock = BOUT_OPP_KNOCK_FRAMES;
+        // 相手が自分から突進してぶつかったあとは、跳ね返りで勝手に土俵を出ないようにする（自滅しない。こちらが当てたときは そのまま飛ぶ）
+        if (this.oPhase === 'charging') {
+          const od = Math.hypot(this.oPos.x - cx, this.oPos.y - cy) || 1;
+          if (od > dR * 0.55) {
+            const ox = (this.oPos.x - cx) / od, oy = (this.oPos.y - cy) / od, vo = this.oVel.x * ox + this.oVel.y * oy;
+            if (vo > 0) { this.oVel.x -= ox * vo * 0.85; this.oVel.y -= oy * vo * 0.85; }
+          }
+        }
 
         // 相手が突進してきた衝突もプレイヤーを flying 状態にして跳ね返す
         if (this.phase === 'idle') {
