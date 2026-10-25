@@ -590,6 +590,10 @@ input[type="text"]:focus { border-color: var(--gold); }
   animation: fadeIn 0.3s ease;
 }
 .bout-result.hidden { display: none; }
+/* 結果が出たあと: パネルをたたんで、土俵・結果・次へのボタンが1画面に入るようにする */
+.scene-bout.bout-done .opp-panel, .scene-bout.bout-done .player-panel { display: none; }
+.scene-bout.bout-done .canvas-wrap { max-width: 300px; }
+.scene-bout.bout-done { padding-bottom: 12px; }
 
 .result-verdict {
   font-size: 3rem;
