@@ -12,10 +12,9 @@ const BOUT_HIT_FACE_MS = 400;   // ぶつかった顔を出しておく長さ
 const BOUT_HENSACHI_SD = 0.12;        // 力・技・速さのばらつき（偏差値10 ＝ 自分の能力の12%）
 const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
-const BOUT_OPP_KNOCK_MIN = 1.0;   // 相手が飛ばされる強さの下限（力・技・重さで不利でも、これだけは飛ぶ）
 
-const BOUT_OPP_KNOCK_RATIO = 2.2;   // ぶつかった勢いのうち、相手が後ろへ飛ぶ速さの最低ライン（能力・重さに関係なく）
-const BOUT_OPP_KNOCK_MINV = 0.01;  // 飛ぶ速さの最低ライン（土俵の幅に対する割合。ゆっくり当たったとき用）
+const BOUT_KNOCK_RATIO = 2.0;   // ぶつかった勢いの何倍の速さで、お互い後ろへ飛ぶか（自分も相手も同じ）
+const BOUT_KNOCK_MINV = 0.01;   // 飛ぶ速さの最低ライン（土俵の幅に対する割合。ゆっくり当たったとき用）
 const BOUT_OPP_KNOCK_FRAMES = 20;  // 飛ばされている間（このフレーム数）は、引き戻しや踏ん張りを止めて、そのまま滑らせる
 
 const BoutScene = {
@@ -492,33 +491,13 @@ const BoutScene = {
           Sound.play('hit', { power: hitPow });
         }
         this.recordHit(nx, ny, hitPow);
-        // 重さ：180kgを超えると得が半分（taijuuEffMass）
-        const pm   = Math.max(60, taijuuEffMass(this.pStat('taijuu'))) / 90;
-        let   om   = Math.max(60, taijuuEffMass(o.stats.taijuu)) / 90;
-        if (om > pm) om = pm * Math.pow(om / pm, 0.4);   // 相手が重くても、重さの差は4割だけ効かせる（まったく動かないのを防ぐ）
-        const pStr = (this.pStat('chikara') / 50) * Math.max(0.3, 1 - r.fatigue / 160);
-        const oStr = (o.stats.chikara / 50) * Math.max(0.3, 1 - o.fatigue / 160);
-        const e      = 0.6;
-        const imp    = -(1 + e) * vRel / (1 / pm + 1 / om);
-        const atkMul = Math.max(0.55, Math.min(1.9, pStr / oStr));
-        let   pMul   = Math.min(0.80, 0.55 / atkMul);
-        let   oMul   = Math.min(1.5,  atkMul * 0.85);
-        // いなし：技が上の側は、まともに受けずに受け流して飛ばされにくい（技の差 50 で約3割減）
-        const tech = ((this.pStat('waza') || 0) - (o.stats.waza || 0)) / 99;
-        if (tech > 0) pMul *= 1 - Math.min(0.5, tech * 0.6);
-        else          oMul *= 1 - Math.min(0.5, -tech * 0.6);
-        // 能力が同じくらい・自分が低くても、当てれば ある程度は吹き飛ぶ（そうしないと勝てない）
-        oMul = Math.max(oMul, BOUT_OPP_KNOCK_MIN);
-        // 腰の入っていない軽い当たりでは、構えている相手はほとんど動かない（ちょんちょん当てるだけでは押し出せない）
-        if (this.oPhase !== 'charging') oMul *= Math.max(BOUT_LIGHT_HIT, Math.min(1, hitPow / 0.6));
-
-        this.pVel.x += nx * (imp / pm) * pMul;
-        this.pVel.y += ny * (imp / pm) * pMul;
-        this.oVel.x -= nx * (imp / om) * oMul;
-        this.oVel.y -= ny * (imp / om) * oMul;
-        // 能力や重さに関係なく、ぶつかった勢いのぶんは 必ず後ろへ飛ぶ（これがないと、不利な相手には動かせない）
-        const away = -(this.oVel.x * nx + this.oVel.y * ny), want = Math.max(-vRel * BOUT_OPP_KNOCK_RATIO, Math.min(s * BOUT_OPP_KNOCK_MINV, -vRel * 8));   // 勢いに比例。ゆっくり当たっても、最低でもこれだけは飛ぶ
-        if (away < want) { this.oVel.x -= nx * (want - away); this.oVel.y -= ny * (want - away); }
+        // 吹き飛び：自分も相手も 同じ計算（力・技・重さは関係なし）。ぶつかった勢いに比例して、お互い同じだけ後ろへ飛ぶ。
+        // ゆっくり当たっても、最低でも土俵の幅の一定割合の速さで飛ぶ
+        const kick = Math.max(-vRel * BOUT_KNOCK_RATIO, Math.min(s * BOUT_KNOCK_MINV, -vRel * 8));
+        this.pVel.x += nx * kick;
+        this.pVel.y += ny * kick;
+        this.oVel.x -= nx * kick;
+        this.oVel.y -= ny * kick;
         this.oKnock = BOUT_OPP_KNOCK_FRAMES;
 
         // 相手が突進してきた衝突もプレイヤーを flying 状態にして跳ね返す
