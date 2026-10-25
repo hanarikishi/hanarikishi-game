@@ -102,6 +102,9 @@
     ashi:    { name: '足袋',     icon: '足', color: '#8affb0', max: 5, desc: '移動速度 +10%' },
     chikara: { name: '力水',     icon: '水', color: '#6ab0ff', max: 5, desc: '体力が少しずつ回復' },
     maneki:  { name: '招き',     icon: '招', color: '#ffe27a', max: 5, desc: '拾う範囲 +40%' },
+    kachi:   { name: '勝ち名乗り', icon: '名', color: '#ff9aa8', max: 5, desc: '敵を倒すと 体力が少し回復', unlock: true },
+    fuku:    { name: '小判ぶくろ', icon: '袋', color: '#ffd24a', max: 5, desc: '小判が出やすくなる', unlock: true },
+    kaeshi:  { name: 'はね返し',   icon: '返', color: '#9ad0ff', max: 5, desc: '攻撃を受けると まわりの敵を突きとばす', unlock: true },
     mawashi: { name: '締め込み', icon: '締', color: '#b0b0c0', max: 5, desc: '受けるダメージ -1' },
   };
   const MAX_WEAPONS = 6, MAX_PASSIVES = 6;
@@ -461,18 +464,16 @@
 
   // ---- 小判の店（小判は ためておける。買った強化は、次からずっと効く）----
   const SHOP = [
-    { id: 'hp',  name: '体力',     per: '+10%', desc: '最大体力が増える',     max: 5, cost: l => 100 * (l + 1) },
-    { id: 'pow', name: '力',       per: '+6%',  desc: '攻撃の強さが増える',   max: 5, cost: l => 120 * (l + 1) },
-    { id: 'spd', name: '足',       per: '+4%',  desc: '移動が速くなる',       max: 5, cost: l => 80 * (l + 1) },
-    { id: 'mag', name: '拾う範囲', per: '+10%', desc: '経験値や小判を引き寄せる', max: 5, cost: l => 80 * (l + 1) },
-    { id: 'xp',  name: '経験値',   per: '+6%',  desc: '経験値が多くもらえる', max: 5, cost: l => 150 * (l + 1) },
-    { id: 'rev', name: '再起',     per: '1回',  desc: 'やられても、体力半分で もう一度たたかえる', max: 1, cost: () => 800 },
+    { id: 'kachi',  name: '勝ち名乗り', desc: '【新能力】敵を倒すと体力が回復。レベルアップで出る', cost: 300 },
+    { id: 'fuku',   name: '小判ぶくろ', desc: '【新能力】小判が出やすくなる。レベルアップで出る',   cost: 200 },
+    { id: 'kaeshi', name: 'はね返し',   desc: '【新能力】攻撃を受けると まわりの敵を突きとばす。レベルアップで出る', cost: 500 },
+    { id: 'rev',    name: '再起',       desc: '【新能力】やられても、体力半分で 1回だけ もう一度たたかえる', cost: 800 },
   ];
-  let wallet = { coins: 0, up: {} };
-  try { const w = JSON.parse(localStorage.getItem('sumo-surv-wallet') || 'null'); if (w && typeof w.coins === 'number' && w.up && typeof w.up === 'object') wallet = w; } catch {}
+  let wallet = { coins: 0, un: {} };
+  try { const w = JSON.parse(localStorage.getItem('sumo-surv-wallet') || 'null'); if (w && typeof w.coins === 'number') wallet = { coins: Math.max(0, Math.floor(w.coins)), un: (w.un && typeof w.un === 'object') ? w.un : {} }; } catch {}
   const saveWallet = () => { try { localStorage.setItem('sumo-surv-wallet', JSON.stringify(wallet)); } catch {} };
-  const up = id => Math.max(0, Math.min(SHOP.find(x => x.id === id).max, Math.floor(Number(wallet.up[id]) || 0)));
-  const SHOPUI = { y0: 150, h: 66, gap: 8, back: { x: 120, y: 640, w: 180, h: 40 } };
+  const has = id => wallet.un[id] === 1;   // 買ってある能力か
+  const SHOPUI = { y0: 150, h: 72, gap: 8, back: { x: 120, y: 640, w: 180, h: 40 } };
 
   const xpFor = L => L === 1 ? 2 : L === 2 ? 5 : 4 + (L - 1) * 6;
 
@@ -485,7 +486,7 @@
     camX = 0; camY = 0;
     addWeapon('hari');
     recalc();
-    P.hp = P.maxHp; P.revive = up('rev');
+    P.hp = P.maxHp; P.revive = has('rev') ? 1 : 0;
   }
 
   // ---- ステータス ----
@@ -493,15 +494,15 @@
   const S = { might: 1, area: 1, cd: 1, magnet: 1, regen: 0, armor: 0, speed: 1 };
   function recalc() {
     const oldMax = P.maxHp;
-    P.maxHp = Math.round(100 * (1 + 0.2 * pv('chanko') + 0.1 * up('hp')));
+    P.maxHp = Math.round(100 * (1 + 0.2 * pv('chanko')));
     P.hp += P.maxHp - oldMax;
-    S.might = 1 + 0.1 * pv('keiko') + 0.06 * up('pow');
+    S.might = 1 + 0.1 * pv('keiko');
     S.area = 1 + 0.1 * pv('kesho');
     S.cd = Math.max(0.4, 1 - 0.08 * pv('tachiai'));
-    S.magnet = 1 + 0.4 * pv('maneki') + 0.1 * up('mag');
+    S.magnet = 1 + 0.4 * pv('maneki');
     S.regen = 0.12 + 0.3 * pv('chikara');
     S.armor = pv('mawashi');
-    S.speed = 1 + 0.1 * pv('ashi') + 0.04 * up('spd');
+    S.speed = 1 + 0.1 * pv('ashi');
   }
 
   function addWeapon(id) {
@@ -662,9 +663,10 @@
     e.dead = true; kills++;
     const d = ENEMY[e.type];
     const gtype = d.gem >= 25 ? 'R' : d.gem >= 5 ? 'G' : '';
+    if (pv('kachi')) P.hp = Math.min(P.maxHp, P.hp + 0.4 * pv('kachi'));   // 勝ち名乗り
     gems.push({ x: e.x, y: e.y, v: d.gem, kind: gtype, t: 0, mag: false, vx: 0, vy: 0 });
     if (e.boss) { items.push({ x: e.x + 14, y: e.y, kind: 'chest' }); items.push({ x: e.x - 14, y: e.y, kind: 'magnet' }); }
-    else if (Math.random() < 0.035) items.push({ x: e.x, y: e.y + 6, kind: 'coin' });
+    else if (Math.random() < 0.035 + 0.025 * pv('fuku')) items.push({ x: e.x, y: e.y + 6, kind: 'coin' });
     for (let i = 0; i < 3; i++) fx.push({ x: e.x, y: e.y, vx: rnd(-50, 50), vy: rnd(-70, -10), t: rnd(0.2, 0.4), c: e.type === 'rival' ? '#9a9ab0' : '#ffffff' });
     sfx.kill();
   }
@@ -853,7 +855,7 @@
 
   // ================= 更新 =================
   function addXp(v) {
-    xp += v * (1 + 0.06 * up('xp'));
+    xp += v;
     while (xp >= xpNeed && state === 'play') {
       xp -= xpNeed; level++; xpNeed = xpFor(level);
       openLevelUp();
@@ -868,6 +870,7 @@
       else if (weapons.length < MAX_WEAPONS) pool.push({ kind: 'w', id, lv: 1 });
     }
     for (const [id, d] of Object.entries(PASSIVES)) {
+      if (d.unlock && !has(id)) continue;   // 小判の店で買うまで出ない
       const v = pv(id);
       if (v > 0) { if (v < d.max) pool.push({ kind: 'p', id, lv: v + 1 }); }
       else if (Object.keys(passives).length < MAX_PASSIVES) pool.push({ kind: 'p', id, lv: 1 });
@@ -905,6 +908,10 @@
     const d = Math.max(1, Math.round(dmg - S.armor));
     P.hp -= d; P.iframe = 0.75; P.hurtT = 0.2; shake = 0.08;
     sfx.hurt();
+    if (pv('kaeshi') && P.hp > 0) {   // はね返し: まわりの敵を突きとばして ダメージ
+      const L = pv('kaeshi'), R = 50 + 12 * L;
+      for (const e of enemies.slice()) if (!e.dead && Math.hypot(e.x - P.x, e.y - P.y) < R) dmgEnemy(e, 12 + 8 * L, P.x, P.y, 180);
+    }
     if (P.hp <= 0) {
       if (P.revive > 0) { P.revive--; P.hp = Math.round(P.maxHp * 0.5); P.iframe = 2; banner = { text: '再起！ もう一度たたかえ', t: 2, color: '#ffe27a' }; sfx.heal(); return; }
       P.hp = 0; endGame(false);
@@ -1380,12 +1387,12 @@
     text(g, '小判の店', W / 2, 60, 30, '#ffd24a', '#3a1a00');
     text(g, `たまった小判 ${wallet.coins}`, W / 2, 105, 17, '#fff', '#000');
     SHOP.forEach((it, i) => {
-      const y = SHOPUI.y0 + i * (SHOPUI.h + SHOPUI.gap), lv = up(it.id), maxed = lv >= it.max, price = it.cost(lv), can = !maxed && wallet.coins >= price;
+      const y = SHOPUI.y0 + i * (SHOPUI.h + SHOPUI.gap), own = has(it.id), can = !own && wallet.coins >= it.cost;
       g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(16, y, W - 32, SHOPUI.h);
-      g.strokeStyle = can ? '#ffd24a' : '#665544'; g.lineWidth = 2; g.strokeRect(16, y, W - 32, SHOPUI.h);
-      text(g, `${it.name}  ${it.max > 1 ? 'Lv.' + lv + '/' + it.max : (lv ? '購入ずみ' : '')}`, 28, y + 20, 16, '#fff', '#000', 'left');
-      text(g, it.max > 1 ? `${it.desc}（1段階ごとに ${it.per}）` : it.desc, 28, y + 44, 11, '#cfd6ff', '#000', 'left', false);
-      text(g, maxed ? 'MAX' : String(price), W - 28, y + SHOPUI.h / 2, 18, maxed ? '#9dffb0' : can ? '#ffd24a' : '#887766', '#000', 'right');
+      g.strokeStyle = own ? '#6a9' : can ? '#ffd24a' : '#665544'; g.lineWidth = 2; g.strokeRect(16, y, W - 32, SHOPUI.h);
+      text(g, it.name, 28, y + 20, 17, '#fff', '#000', 'left');
+      text(g, it.desc, 28, y + 46, 10.5, '#cfd6ff', '#000', 'left', false);
+      text(g, own ? '購入ずみ' : String(it.cost), W - 28, y + 20, 16, own ? '#9dffb0' : can ? '#ffd24a' : '#887766', '#000', 'right');
     });
     const b = SHOPUI.back; g.fillStyle = '#334'; g.fillRect(b.x, b.y, b.w, b.h); g.strokeStyle = '#99a'; g.strokeRect(b.x, b.y, b.w, b.h);
     text(g, 'もどる', b.x + b.w / 2, b.y + b.h / 2, 18, '#fff', '#000');
@@ -1462,9 +1469,9 @@
     }
     if (state === 'shop') {
       SHOP.forEach((it, i) => {
-        const yy = SHOPUI.y0 + i * (SHOPUI.h + SHOPUI.gap), lv = up(it.id);
-        if (y >= yy && y <= yy + SHOPUI.h && lv < it.max && wallet.coins >= it.cost(lv)) {
-          wallet.coins -= it.cost(lv); wallet.up[it.id] = lv + 1; saveWallet(); sfx.coin();
+        const yy = SHOPUI.y0 + i * (SHOPUI.h + SHOPUI.gap), own = has(it.id);
+        if (y >= yy && y <= yy + SHOPUI.h && !own && wallet.coins >= it.cost) {
+          wallet.coins -= it.cost; wallet.un[it.id] = 1; saveWallet(); sfx.coin();
         }
       });
       const b = SHOPUI.back;
