@@ -12,6 +12,8 @@ const BOUT_HIT_FACE_MS = 400;   // ぶつかった顔を出しておく長さ
 // 番付ごとの相手の動き（ざっくり。序ノ口〜横綱の順）。wait: 突進までの待ち時間の倍率（小さいほど攻めが多い）、dodge: かわす確率に足す分
 const BOUT_RANK_WAIT  = [1.35, 1.30, 1.25, 1.20, 1.10, 0.78, 0.75, 0.73, 0.72, 0.72];
 const BOUT_RANK_DODGE = [0, 0, 0, 0.01, 0.03, 0.05, 0.08, 0.11, 0.14, 0.18];
+// 幕内の相手の能力（力・技・速さの平均）が自分より高いとき、相手の飛びやすさは自分の何倍か（横綱は飛びにくい）
+const BOUT_MAKUUCHI_KNOCK = { 5: 0.95, 6: 0.90, 7: 0.85, 8: 0.80, 9: 0.75 };
 const BOUT_OPP_BOOST = { makushita: 1.08, juryo: 1.15 };   // 名簿で自分の番付が分からないときの、相手の強さ（幕下 +8%、十両 +15%）
 const BOUT_RANK_GAP_K = 0.0025;   // 番付が1枚上の相手ごとに、能力が +0.25%（100枚上なら +25%）。下の相手は 弱くなる
 const BOUT_RANK_GAP_MIN = -0.12, BOUT_RANK_GAP_MAX = 0.30;   // 弱くなるのは最大 -12%、強くなるのは最大 +30%
@@ -533,7 +535,9 @@ const BoutScene = {
         const kick = Math.min(s * BOUT_KNOCK_MAXV, Math.max(-vRel * BOUT_KNOCK_RATIO, Math.min(s * BOUT_KNOCK_MINV, -vRel * 8)));   // 強く当たっても、飛ぶ速さには上限がある
         // 土俵の端に近いほど、押し出されやすい（自分も相手も同じ。真ん中は ふつう、端ぎわは最大 BOUT_EDGE_PUSH 倍）
         const edgeK = (x, y) => 1 + (BOUT_EDGE_PUSH - 1) * Math.max(0, Math.min(1, (Math.hypot(x - cx, y - cy) / dR - 0.5) / 0.4));
-        const kickP = kick * edgeK(this.pPos.x, this.pPos.y), kickO = kick * edgeK(this.oPos.x, this.oPos.y);
+        const avg3 = st => ((st.chikara || 0) + (st.waza || 0) + (st.hayasa || 0)) / 3;
+        const heavy = avg3(o.stats) > (this.pStat('chikara') + this.pStat('waza') + this.pStat('hayasa')) / 3 ? (BOUT_MAKUUCHI_KNOCK[o.banzukeRank] || 1) : 1;   // 幕内で、相手の能力が上のとき
+        const kickP = kick * edgeK(this.pPos.x, this.pPos.y), kickO = kick * edgeK(this.oPos.x, this.oPos.y) * heavy;
         this.pVel.x += nx * kickP;
         this.pVel.y += ny * kickP;
         this.oVel.x -= nx * kickO;
