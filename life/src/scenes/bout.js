@@ -13,7 +13,8 @@ const BOUT_HENSACHI_SD = 0.12;        // 力・技・速さのばらつき（偏
 const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
 
-const BOUT_KNOCK_RATIO = 0.6;   // ぶつかった勢いの何倍の速さで、お互い後ろへ飛ぶか（自分も相手も同じ）
+const BOUT_KNOCK_RATIO = 0.4;   // ぶつかった勢いの何倍の速さで、お互い後ろへ飛ぶか（自分も相手も同じ）
+const BOUT_KNOCK_MAXV = 0.006;  // 飛ぶ速さの上限（土俵の幅に対する割合。強く当たったとき用）
 const BOUT_KNOCK_MINV = 0.003;  // 飛ぶ速さの最低ライン（土俵の幅に対する割合。ゆっくり当たったとき用）
 const BOUT_OPP_KNOCK_FRAMES = 20;  // 飛ばされている間（このフレーム数）は、引き戻しや踏ん張りを止めて、そのまま滑らせる
 
@@ -493,7 +494,7 @@ const BoutScene = {
         this.recordHit(nx, ny, hitPow);
         // 吹き飛び：自分も相手も 同じ計算（力・技・重さは関係なし）。ぶつかった勢いに比例して、お互い同じだけ後ろへ飛ぶ。
         // ゆっくり当たっても、最低でも土俵の幅の一定割合の速さで飛ぶ
-        const kick = Math.max(-vRel * BOUT_KNOCK_RATIO, Math.min(s * BOUT_KNOCK_MINV, -vRel * 8));
+        const kick = Math.min(s * BOUT_KNOCK_MAXV, Math.max(-vRel * BOUT_KNOCK_RATIO, Math.min(s * BOUT_KNOCK_MINV, -vRel * 8)));   // 強く当たっても、飛ぶ速さには上限がある
         this.pVel.x += nx * kick;
         this.pVel.y += ny * kick;
         this.oVel.x -= nx * kick;
