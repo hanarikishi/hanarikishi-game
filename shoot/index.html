@@ -74,7 +74,7 @@
   const YOKO = { body: '#ffee00', belt: '#1f5c00' };
 
   // ---- 画像（はなりきしの絵は ../parts/ に共通で置いてある） ----
-  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home'];
+  const SRC = ['body_color', 'mawashi', 'body_line', 'normal', 'collision', 'win', 'home', 'basketball/basket1', 'basketball/basket2', 'basketball/basket3', 'basketball/basket4'];   // basketball/ は、シュートのポーズの絵（640x640・右向き・透明）
   const IMG = {};
   const CX = 513, CY = 538, BODY_R = 395;
   const loadImages = () => Promise.all(SRC.map(n => new Promise((res, rej) => {
@@ -478,11 +478,10 @@
     if (jumpT > 0) { const k = jumpT / 0.35; up = Math.sin(k * Math.PI) * 24; sy = 1 + Math.sin(k * Math.PI) * 0.08; sx = 2 - sy; }
     const v = aimVel(); if (v) { sy = 1 - v.power * 0.12; sx = 1 + v.power * 0.1; }
     g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(x, FLOOR + 4, 28 - up * 0.3, 6, 0, 0, Math.PI * 2); g.fill();
-    let face = 'normal';
-    if (shot && shot.scored) face = 'win'; else if (shot && shot.done) face = 'hit';
-    const r = 28;
+    // ポーズ: ふだん=1 ／ ひっぱっているとき=2 ／ 入った=3 ／ 外れた=4（parts/basketball/ の絵。体の大きさは、いままでの丸い体と同じにそろえてある）
+    const pose = shot ? (shot.scored ? 3 : shot.done ? 4 : 1) : (aim ? 2 : 1), im = IMG['basketball/basket' + pose], s = 0.14;
     g.save(); g.translate(x, FLOOR - up); g.scale(sx, sy);
-    drawSumo(g, sprite(YOKO.body, YOKO.belt), face, 0, -r * 1.05, r);
+    g.drawImage(im, -295 * s, -610 * s, 640 * s, 640 * s);   // 絵の中の体の中心 x≈295、足元 y≈610
     g.restore();
   }
 

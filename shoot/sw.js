@@ -2,7 +2,7 @@
 const VERSION = 'shoot-v7';
 const PREFIX = VERSION.replace(/v\d+$/, '');   // 自分のキャッシュの名前の頭（ほかのゲームのキャッシュは消さない）
 const FILES = [
-  './', './index.html', '../share.js', '../back.js', '../rank.js', '../firebase-config.js', './manifest.webmanifest', './core.js', './stages.js',
+  './', './index.html', '../share.js', '../parts/basketball/basket1.png', '../parts/basketball/basket2.png', '../parts/basketball/basket3.png', '../parts/basketball/basket4.png', '../back.js', '../rank.js', '../firebase-config.js', './manifest.webmanifest', './core.js', './stages.js',
   '../parts/body_color.png', '../parts/mawashi.png', '../parts/body_line.png',
   '../parts/normal.png', '../parts/collision.png', '../parts/win.png', '../parts/home.png',
   '../parts/icon-192.png', '../parts/icon-512.png', '../parts/icon-maskable-512.png',
