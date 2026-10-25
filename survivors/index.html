@@ -472,7 +472,8 @@
   let wallet = { coins: 0, un: {} };
   try { const w = JSON.parse(localStorage.getItem('sumo-surv-wallet') || 'null'); if (w && typeof w.coins === 'number') wallet = { coins: Math.max(0, Math.floor(w.coins)), un: (w.un && typeof w.un === 'object') ? w.un : {} }; } catch {}
   const saveWallet = () => { try { localStorage.setItem('sumo-surv-wallet', JSON.stringify(wallet)); } catch {} };
-  const has = id => wallet.un[id] === 1;   // 買ってある能力か
+  const SHOP_ON = false;   // 小判の店: いったんオフ（true にすると、ボタンと買った能力が復活する）
+  const has = id => SHOP_ON && wallet.un[id] === 1;   // 買ってある能力か
   const SHOPUI = { y0: 150, h: 72, gap: 8, back: { x: 120, y: 640, w: 180, h: 40 } };
 
   const xpFor = L => L === 1 ? 2 : L === 2 ? 5 : 4 + (L - 1) * 6;
@@ -1432,7 +1433,7 @@
       text(g, `ベスト ${fmt(best.time)}  撃破 ${best.kills}`, W / 2, 520, 14, '#ffe27a', '#000');
       text(g, 'タップで はじめる', W / 2, 580, 22, '#9dffb0', '#000');
     }
-    if (state === 'title') {
+    if (SHOP_ON && state === 'title') {
       g.fillStyle = '#7a4a10'; g.fillRect(W / 2 - 80, 600, 160, 38); g.strokeStyle = '#ffd24a'; g.lineWidth = 2; g.strokeRect(W / 2 - 80, 600, 160, 38);
       text(g, '小判の店', W / 2, 619, 18, '#ffe27a', '#000');
       text(g, `たまった小判 ${wallet.coins}`, W / 2, 660, 13, '#ffd24a', '#000');
@@ -1455,8 +1456,10 @@
       text(g, `ベスト ${fmt(best.time)}   小判 +${coins}（ためた小判 ${wallet.coins}）`, W / 2, 452, 14, '#ffe27a', '#000');
       if (over.t > 0.8) {
         text(g, 'タップで もういちど', W / 2, 515, 22, '#9dffb0', '#000');
-        g.fillStyle = '#7a4a10'; g.fillRect(W / 2 - 80, 570, 160, 38); g.strokeStyle = '#ffd24a'; g.lineWidth = 2; g.strokeRect(W / 2 - 80, 570, 160, 38);
-        text(g, '小判の店', W / 2, 589, 18, '#ffe27a', '#000');
+        if (SHOP_ON) {
+          g.fillStyle = '#7a4a10'; g.fillRect(W / 2 - 80, 570, 160, 38); g.strokeStyle = '#ffd24a'; g.lineWidth = 2; g.strokeRect(W / 2 - 80, 570, 160, 38);
+          text(g, '小判の店', W / 2, 589, 18, '#ffe27a', '#000');
+        }
       }
       g.globalAlpha = 1;
     }
@@ -1470,7 +1473,7 @@
     e.preventDefault(); ac();
     const [x, y] = toCanvas(e);
     if (state === 'title') {
-      if (x > W / 2 - 80 && x < W / 2 + 80 && y > 600 && y < 638) { state = 'shop'; return; }
+      if (SHOP_ON && x > W / 2 - 80 && x < W / 2 + 80 && y > 600 && y < 638) { state = 'shop'; return; }
       startGame(); return;
     }
     if (state === 'shop') {
@@ -1486,7 +1489,7 @@
     }
     if (state === 'over' || state === 'win') {
       if (over.t > 0.8) {
-        if (x > W / 2 - 80 && x < W / 2 + 80 && y > 570 && y < 608) { reset(); state = 'shop'; return; }
+        if (SHOP_ON && x > W / 2 - 80 && x < W / 2 + 80 && y > 570 && y < 608) { reset(); state = 'shop'; return; }
         reset(); state = 'play';
       }
       return;
