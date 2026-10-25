@@ -9,11 +9,17 @@ const BOUT_LIGHT_HIT = 0.2;
 const BOUT_READY_MS = 1500;   // 「はっけよーーい」を言い切るまで
 const BOUT_HIT_FACE_MS = 400;   // ぶつかった顔を出しておく長さ
 // 幕下・十両の相手の能力：場所開始時の自分を偏差値50として、ばらつかせる（取組の中だけ。名簿の能力は変えない）
-const BOUT_OPP_BOOST = { makushita: 1.08, juryo: 1.15 };   // 相手の平均は、自分より これだけ強い（幕下 +8%、十両 +15%）
+// 番付ごとの相手の動き（ざっくり。序ノ口〜横綱の順）。wait: 突進までの待ち時間の倍率（小さいほど攻めが多い）、dodge: かわす確率に足す分
+const BOUT_RANK_WAIT  = [1.20, 1.18, 1.15, 1.12, 1.08, 1.04, 1.02, 1.00, 1.00, 1.00];
+const BOUT_RANK_DODGE = [0, 0, 0, 0.005, 0.015, 0.025, 0.04, 0.055, 0.07, 0.09];
+const BOUT_OPP_BOOST = { makushita: 1.08, juryo: 1.15 };   // 名簿で自分の番付が分からないときの、相手の強さ（幕下 +8%、十両 +15%）
+const BOUT_RANK_GAP_K = 0.0025;   // 番付が1枚上の相手ごとに、能力が +0.25%（100枚上なら +25%）。下の相手は 弱くなる
+const BOUT_RANK_GAP_MIN = -0.12, BOUT_RANK_GAP_MAX = 0.30;   // 弱くなるのは最大 -12%、強くなるのは最大 +30%
 const BOUT_HENSACHI_SD = 0.12;        // 力・技・速さのばらつき（偏差値10 ＝ 自分の能力の12%）
 const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
 
+const BOUT_OPP_STAND = 0.05;   // 飛ばされている最中の、土俵際の粘り（毎フレーム、外へ向かう速さをこの割合だけ殺す。技が高いほど強い）
 const BOUT_OPP_GRIT = 0.3;   // 相手が自分から土俵を出ないよう踏ん張る強さの下限（飛ばされているときは効かない）
 const BOUT_KNOCK_SLOW = 0.5;   // 飛ばされた相手が、この速さより遅くなったら、端ぎわで踏ん張る（ゆっくり出ていかない）
 const BOUT_EDGE_PUSH = 2.5;   // 土俵の端ぎわで飛ばされる強さの倍率（中心から90%より外側で最大）。これで 端の近くなら押し出せる
@@ -69,7 +75,12 @@ const BoutScene = {
       b.oppRoll = b.oppRoll || {};
       if (!b.oppRoll[opp.shikona]) {
         const z = () => Math.max(-2, Math.min(2, (Math.random() + Math.random() + Math.random() - 1.5) * 2));   // ほぼ正規分布（±2まで）
-        const boost = BOUT_OPP_BOOST[opp.div] || 1;
+        // 番付の差で強さを変える（自分より上位の相手ほど強く、下位ほど弱い）
+        const list = Game.state.roster && Game.state.roster.list;
+        const pi = list ? list.findIndex(x => x.isPlayer) : -1, oi = list ? list.findIndex(x => x.shikona === opp.shikona) : -1;
+        const boost = pi >= 0 && oi >= 0
+          ? 1 + Math.max(BOUT_RANK_GAP_MIN, Math.min(BOUT_RANK_GAP_MAX, (pi - oi) * BOUT_RANK_GAP_K))
+          : (BOUT_OPP_BOOST[opp.div] || 1);
         const roll = (v, sd) => Math.max(10, Math.round(v * boost * (1 + z() * sd)));
         b.oppRoll[opp.shikona] = { chikara: roll(base.chikara, BOUT_HENSACHI_SD), waza: roll(base.waza, BOUT_HENSACHI_SD),
           hayasa: roll(base.hayasa, BOUT_HENSACHI_SD), taijuu: roll(base.taijuu, BOUT_HENSACHI_SD_WEIGHT) };
@@ -181,7 +192,7 @@ const BoutScene = {
     this.oStagger = 0;
     this.hitLog = []; this.lastDodgeAt = 0; this.lastLaunchAt = 0; this.lastChargeAt = 0;
     const o0 = this.opponent;
-    this.oTimer = Math.round(Math.max(15, 50 - (o0 ? o0.stats.hayasa * 0.3 + o0.banzukeRank * 3 : 0)));
+    this.oTimer = o0 ? this.oWait(o0) : 50;
 
     const canvas = document.getElementById('bout-canvas');
     const wrap   = document.getElementById('canvas-wrap');
@@ -333,6 +344,12 @@ const BoutScene = {
     this.animId = requestAnimationFrame(loop);
   },
 
+  // 相手が次に突進するまでの待ち時間（速さが高いほど、番付が上ほど短い）
+  oWait(o) {
+    const k = BOUT_RANK_WAIT[Math.max(0, Math.min(9, o.banzukeRank || 0))];
+    return Math.round(Math.max(12, (50 - o.stats.hayasa * 0.3) * k));
+  },
+
   stepPhysics() {
     if (this.readyUntil) {
       if (performance.now() >= this.readyUntil) {
@@ -365,7 +382,7 @@ const BoutScene = {
       const toward = -(this.pVel.x * pdx + this.pVel.y * pdy) / pd;   // 相手へ向かう速さ
       if (pd < rR * 4.5 && toward > s * 0.012) {
         this.dodgeRolled = true;
-        if (Math.random() < 0.08 + oW * 0.30 + o.banzukeRank * 0.01) {
+        if (Math.random() < 0.08 + oW * 0.30 + o.banzukeRank * 0.01 + (BOUT_RANK_DODGE[o.banzukeRank] || 0)) {
           let side = Math.random() < 0.5 ? 1 : -1;   // 飛んでくる向きに直角
           const dodge = s * (0.014 + oW * 0.008);
           // かわした先が土俵の外なら、反対側へ。どちらも外なら かわさない（かわして勝手に出ない）
@@ -421,7 +438,7 @@ const BoutScene = {
       const oSpd2 = Math.hypot(this.oVel.x, this.oVel.y);
       if (oSpd2 < s * 0.007 || vToPlayer < -s * 0.008) {
         this.oPhase = 'ready';
-        this.oTimer = Math.round(Math.max(15, 50 - o.stats.hayasa * 0.3 - o.banzukeRank * 3));
+        this.oTimer = this.oWait(o);
       }
     }
 
@@ -443,11 +460,13 @@ const BoutScene = {
     }
 
     // 相手の土俵際の踏ん張り：技が高いほど外へ出る勢いを殺して残る（自分と同じ式）
-    if (oDCur > dR * 0.75 && !knockFast) {
+    if (oDCur > dR * 0.75) {
       const nx = (this.oPos.x - cx) / oDCur, ny = (this.oPos.y - cy) / oDCur;
       const vOut = this.oVel.x * nx + this.oVel.y * ny;
       if (vOut > 0) {
-        const brake = vOut * BOUT_EDGE_BRAKE * Math.max(oW, BOUT_OPP_GRIT) * Math.min(1, (oDCur - dR * 0.75) / (dR * 0.20));   // 技が低くても、自分から出ないよう踏ん張る
+        // 自分から出ないよう踏ん張る（技が低くても）。飛ばされている最中も、少しだけ粘る（技が高いほど粘る）
+        const grit = knockFast ? BOUT_OPP_STAND * (0.5 + oW) : BOUT_EDGE_BRAKE * Math.max(oW, BOUT_OPP_GRIT);
+        const brake = vOut * grit * Math.min(1, (oDCur - dR * 0.75) / (dR * 0.20));
         this.oVel.x -= nx * brake; this.oVel.y -= ny * brake;
       }
     }
@@ -541,7 +560,7 @@ const BoutScene = {
         //  ・小さく当てられた → 構わず攻めを続け、かえって早く攻め返してくる（ちょんちょん当て続けても止まらない）
         if (this.oPhase === 'charging') {
           this.oPhase = 'ready';
-          this.oTimer = Math.round(Math.max(15, 50 - o.stats.hayasa * 0.3 - o.banzukeRank * 3));
+          this.oTimer = this.oWait(o);
           this.oStagger = 0;
         } else if (hitPow >= 0.6 && (this.oStagger || 0) < 2) {
           this.oStagger = (this.oStagger || 0) + 1;
