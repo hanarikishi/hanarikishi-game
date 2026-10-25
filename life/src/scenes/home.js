@@ -140,7 +140,8 @@ const HomeScene = {
     const shobuPct = shobuChankoPct(calcSkillEffects(Game.state).shobuChanko);
     const shobu    = shobuPct && cal.shobuPick ? { stat: cal.shobuPick, pct: shobuPct } : null;
     cal.shobuPick  = null;
-    Game.state.basho = { day: 1, wins: 0, losses: 0, results: [], opponent: null, tanimachiEarned: 0, shobu };
+    Game.state.basho = { day: 1, wins: 0, losses: 0, results: [], opponent: null, tanimachiEarned: 0, shobu,
+      start: { ...Game.state.rikishi.stats }, oppRoll: {} };   // start: 場所開始時の自分の能力（幕下・十両の相手の基準）
     if (Game.state.roster) rosterStartBasho(Game.state.roster);
   },
 

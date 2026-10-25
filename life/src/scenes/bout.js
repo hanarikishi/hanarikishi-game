@@ -8,7 +8,9 @@ const BOUT_LIGHT_HIT = 0.2;
 // 「はっけよい」から「のこった！」までのミリ秒
 const BOUT_READY_MS = 1500;   // 「はっけよーーい」を言い切るまで
 const BOUT_HIT_FACE_MS = 400;   // ぶつかった顔を出しておく長さ
-const BOUT_MAKUSHITA_MULT = 0.8;   // 幕下の相手の力・技・速さ（取組の中だけ）
+// 幕下・十両の相手の能力：場所開始時の自分を偏差値50として、ばらつかせる（取組の中だけ。名簿の能力は変えない）
+const BOUT_HENSACHI_SD = 0.12;        // 力・技・速さのばらつき（偏差値10 ＝ 自分の能力の12%）
+const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
 const BoutScene = {
   opponent:  null,
@@ -51,11 +53,17 @@ const BoutScene = {
       }
     }
     if (!opp.look) opp.look = npcRandomLook();   // 名簿外の相手は見た目をその場で決める
-    // 幕下の相手は取組では少し弱め（名簿の能力は変えず、この取組用の写しを使う）
-    if (opp.div === 'makushita' && !opp.boutCopy) {
-      const k = BOUT_MAKUSHITA_MULT;
-      opp = { ...opp, boutCopy: true,
-              stats: { ...opp.stats, chikara: opp.stats.chikara * k, waza: opp.stats.waza * k, hayasa: opp.stats.hayasa * k } };
+    // 幕下・十両の相手：場所開始時の自分の能力を偏差値50として、能力をばらつかせる（同じ相手は場所の間ずっと同じ）
+    if ((opp.div === 'makushita' || opp.div === 'juryo') && !opp.boutCopy) {
+      const b = Game.state.basho, base = b.start || Game.state.rikishi.stats;
+      b.oppRoll = b.oppRoll || {};
+      if (!b.oppRoll[opp.shikona]) {
+        const z = () => Math.max(-2, Math.min(2, (Math.random() + Math.random() + Math.random() - 1.5) * 2));   // ほぼ正規分布（±2まで）
+        const roll = (v, sd) => Math.max(10, Math.round(v * (1 + z() * sd)));
+        b.oppRoll[opp.shikona] = { chikara: roll(base.chikara, BOUT_HENSACHI_SD), waza: roll(base.waza, BOUT_HENSACHI_SD),
+          hayasa: roll(base.hayasa, BOUT_HENSACHI_SD), taijuu: roll(base.taijuu, BOUT_HENSACHI_SD_WEIGHT) };
+      }
+      opp = { ...opp, boutCopy: true, stats: { ...opp.stats, ...b.oppRoll[opp.shikona] } };
     }
     this.opponent = opp;
     const total = getBoutCount(r.banzukeRank);
