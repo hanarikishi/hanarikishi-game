@@ -13,8 +13,8 @@ const BOUT_HENSACHI_SD = 0.12;        // 力・技・速さのばらつき（偏
 const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
 
-const BOUT_KNOCK_RATIO = 2.0;   // ぶつかった勢いの何倍の速さで、お互い後ろへ飛ぶか（自分も相手も同じ）
-const BOUT_KNOCK_MINV = 0.01;   // 飛ぶ速さの最低ライン（土俵の幅に対する割合。ゆっくり当たったとき用）
+const BOUT_KNOCK_RATIO = 1.2;   // ぶつかった勢いの何倍の速さで、お互い後ろへ飛ぶか（自分も相手も同じ）
+const BOUT_KNOCK_MINV = 0.005;  // 飛ぶ速さの最低ライン（土俵の幅に対する割合。ゆっくり当たったとき用）
 const BOUT_OPP_KNOCK_FRAMES = 20;  // 飛ばされている間（このフレーム数）は、引き戻しや踏ん張りを止めて、そのまま滑らせる
 
 const BoutScene = {
