@@ -49,6 +49,9 @@
     if (cfg.isPlaying()) { try { history.pushState({ hb: 1 }, ''); } catch {} pause(); return; }
     armed = false; history.back();   // 本番中でなければ、前のページへ
   }
+  // 「ゲーム一覧」のタップを、ゲーム側のタップ処理（もう一度あそぶ等）に拾われないようにする
+  function guardToList() { const a = document.getElementById('toList'); if (a) ['pointerdown', 'pointerup', 'touchstart', 'mousedown', 'click'].forEach(ev => a.addEventListener(ev, e => e.stopPropagation())); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', guardToList); else guardToList();
   window.HanaBack = {
     init(c) {
       cfg = c;

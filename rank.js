@@ -119,10 +119,9 @@
     if (document.getElementById('hrCss')) return;
     const s = document.createElement('style'); s.id = 'hrCss';
     s.textContent = `
-      #hrBtn { position: fixed; z-index: 5; cursor: pointer; font: bold 14px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
-        right: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px); bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 50px);
-        padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10; background: #ffd24a; color: #3a2a10; }
-      #hrBtn.low { bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 10px); }   /* シェアのボタンが出ていないとき（タイトルなど）は、ゲーム一覧のボタンと同じ高さ */
+      #hrBtn { position: fixed; z-index: 5; cursor: pointer; font: bold 12px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
+        left: 50vw; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);   /* 下の列: 左に「ゲーム一覧」、まん中に「ランキング」、右に「シェア」 */
+        padding: 6px 10px; border-radius: 999px; border: 2px solid #3a2a10; background: #ffd24a; color: #3a2a10; white-space: nowrap; }
       #hrBtn[hidden] { display: none; }
       #hrModal { position: fixed; inset: 0; z-index: 50; background: rgba(20,14,6,.72); display: flex; align-items: center; justify-content: center; font-family: "Hiragino Sans","Yu Gothic","Meiryo",sans-serif; }
       #hrModal .box { width: min(92vw, 400px); max-height: 86dvh; display: flex; flex-direction: column; background: #fff8dc; color: #3a2a10; border: 3px solid #3a2a10; border-radius: 16px; overflow: hidden; }
