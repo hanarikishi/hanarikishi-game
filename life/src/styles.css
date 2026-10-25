@@ -552,7 +552,7 @@ input[type="text"]:focus { border-color: var(--gold); }
 /* ── KEIKO SCENE ────────────────────────────── */
 /* ── BOUT SCENE ─────────────────────────────── */
 /* 取組の画面は、画面いっぱいに引きのばさない（100vh+下の余白で、はみ出して勝手にスクロールできてしまい、上が切れていた） */
-.scene-bout { position: relative; min-height: 0; padding: 0 0 8px; gap: 0; align-items: center; }
+.scene-bout { min-height: 0; padding: 0 0 8px; gap: 0; align-items: center; }
 
 .bout-header {
   width: 100%;
@@ -592,8 +592,8 @@ input[type="text"]:focus { border-color: var(--gold); }
 }
 .bout-result.hidden { display: none; }
 /* 結果の板と「次の取組へ」は小さめにして、土俵やパネルは そのままで 1画面に入るようにする */
-/* 結果が出ても、取組中と同じ画面のまま。結果とボタンは、画面の下（自分のパネルと土俵の下がわ）に重ねて出す */
-.scene-bout .bout-result { position: absolute; left: 0; right: 0; bottom: 8px; z-index: 5; gap: 4px; padding: 8px 20px 8px; background: linear-gradient(to bottom, rgba(8,12,20,0), rgba(8,12,20,0.88) 22%); }
+/* 結果とボタンは、自分のパネル（はなりきしの名前など）のすぐ下に出す */
+.scene-bout .bout-result { gap: 4px; padding: 6px 20px 6px; }
 .scene-bout .bout-board { max-width: 320px; padding: 3px 10px; margin-bottom: 0; }
 .scene-bout .bb-head { font-size: 0.62rem; margin-bottom: 0; }
 .scene-bout .bb-row { padding: 0; gap: 6px; }

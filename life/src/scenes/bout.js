@@ -12,6 +12,8 @@ const BOUT_HIT_FACE_MS = 400;   // ぶつかった顔を出しておく長さ
 const BOUT_HENSACHI_SD = 0.12;        // 力・技・速さのばらつき（偏差値10 ＝ 自分の能力の12%）
 const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
+const BOUT_OPP_KNOCK_MIN = 1.0;   // 相手が飛ばされる強さの下限（力・技・重さで不利でも、これだけは飛ぶ）
+
 const BoutScene = {
   opponent:  null,
   phase:     'idle',   // idle | aiming | flying | done
@@ -486,7 +488,8 @@ const BoutScene = {
         this.recordHit(nx, ny, hitPow);
         // 重さ：180kgを超えると得が半分（taijuuEffMass）
         const pm   = Math.max(60, taijuuEffMass(this.pStat('taijuu'))) / 90;
-        const om   = Math.max(60, taijuuEffMass(o.stats.taijuu)) / 90;
+        let   om   = Math.max(60, taijuuEffMass(o.stats.taijuu)) / 90;
+        if (om > pm) om = pm * Math.pow(om / pm, 0.4);   // 相手が重くても、重さの差は4割だけ効かせる（まったく動かないのを防ぐ）
         const pStr = (this.pStat('chikara') / 50) * Math.max(0.3, 1 - r.fatigue / 160);
         const oStr = (o.stats.chikara / 50) * Math.max(0.3, 1 - o.fatigue / 160);
         const e      = 0.6;
@@ -498,6 +501,8 @@ const BoutScene = {
         const tech = ((this.pStat('waza') || 0) - (o.stats.waza || 0)) / 99;
         if (tech > 0) pMul *= 1 - Math.min(0.5, tech * 0.6);
         else          oMul *= 1 - Math.min(0.5, -tech * 0.6);
+        // 能力が同じくらい・自分が低くても、当てれば ある程度は吹き飛ぶ（そうしないと勝てない）
+        oMul = Math.max(oMul, BOUT_OPP_KNOCK_MIN);
         // 腰の入っていない軽い当たりでは、構えている相手はほとんど動かない（ちょんちょん当てるだけでは押し出せない）
         if (this.oPhase !== 'charging') oMul *= Math.max(BOUT_LIGHT_HIT, Math.min(1, hitPow / 0.6));
 
@@ -816,7 +821,7 @@ const BoutScene = {
 
   // 結果の下の「次へ」ボタンが画面に入るように、そこまでスクロールする
   showNextButton() {
-    // 結果とボタンは、画面の下に重ねて出す（画面の大きさは変えない）ので、スクロールは要らない
+    requestAnimationFrame(() => { document.getElementById('btn-next')?.scrollIntoView({ block: 'nearest' }); });
   },
 
   endBout(win) {
