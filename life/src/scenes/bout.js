@@ -808,7 +808,7 @@ const BoutScene = {
 
   // 結果の下の「次へ」ボタンが画面に入るように、そこまでスクロールする
   showNextButton() {
-    requestAnimationFrame(() => { document.getElementById('btn-next')?.scrollIntoView({ block: 'nearest' }); });
+    // 結果とボタンは、画面の下に重ねて出す（画面の大きさは変えない）ので、スクロールは要らない
   },
 
   endBout(win) {
