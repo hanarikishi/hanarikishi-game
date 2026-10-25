@@ -14,7 +14,8 @@ const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
 const BOUT_OPP_KNOCK_MIN = 1.0;   // 相手が飛ばされる強さの下限（力・技・重さで不利でも、これだけは飛ぶ）
 
-const BOUT_OPP_KNOCK_RATIO = 1.0;   // ぶつかった勢いのうち、相手が後ろへ飛ぶ速さの最低ライン（能力・重さに関係なく）
+const BOUT_OPP_KNOCK_RATIO = 2.2;   // ぶつかった勢いのうち、相手が後ろへ飛ぶ速さの最低ライン（能力・重さに関係なく）
+const BOUT_OPP_KNOCK_MINV = 0.01;  // 飛ぶ速さの最低ライン（土俵の幅に対する割合。ゆっくり当たったとき用）
 const BOUT_OPP_KNOCK_FRAMES = 20;  // 飛ばされている間（このフレーム数）は、引き戻しや踏ん張りを止めて、そのまま滑らせる
 
 const BoutScene = {
@@ -516,7 +517,7 @@ const BoutScene = {
         this.oVel.x -= nx * (imp / om) * oMul;
         this.oVel.y -= ny * (imp / om) * oMul;
         // 能力や重さに関係なく、ぶつかった勢いのぶんは 必ず後ろへ飛ぶ（これがないと、不利な相手には動かせない）
-        const away = -(this.oVel.x * nx + this.oVel.y * ny), want = -vRel * BOUT_OPP_KNOCK_RATIO;
+        const away = -(this.oVel.x * nx + this.oVel.y * ny), want = Math.max(-vRel * BOUT_OPP_KNOCK_RATIO, Math.min(s * BOUT_OPP_KNOCK_MINV, -vRel * 8));   // 勢いに比例。ゆっくり当たっても、最低でもこれだけは飛ぶ
         if (away < want) { this.oVel.x -= nx * (want - away); this.oVel.y -= ny * (want - away); }
         this.oKnock = BOUT_OPP_KNOCK_FRAMES;
 
