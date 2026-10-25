@@ -58,6 +58,24 @@
   const W = 420, H = 700;
   const COLS = 9;                       // 遊べる列数（x = 0..9 のタイル座標）
   const HUD_H = 58;
+  // コインで買える はなりきしの色（見た目だけ。強さや順位には関係しない）
+  const SKINS = [
+    { name: 'あか',     price: 30,  body: '#ff6b6b', belt: '#111111' },
+    { name: 'そら',     price: 30,  body: '#7ec8ff', belt: '#111111' },
+    { name: 'わかくさ', price: 50,  body: '#8fe388', belt: '#1b5e20' },
+    { name: 'もも',     price: 50,  body: '#ffa6d1', belt: '#880e4f' },
+    { name: 'むらさき', price: 80,  body: '#b48cf0', belt: '#311b92' },
+    { name: 'くろ',     price: 120, body: '#4a4a55', belt: '#e0b030' },
+    { name: 'しろ',     price: 120, body: '#ffffff', belt: '#c62828' },
+    { name: 'きん',     price: 300, body: '#ffd54a', belt: '#7a1010' },
+  ];
+  let wallet = { coins: 0, own: [], sel: -1 };   // sel: -1 は「番付どおり」の色
+  try {
+    const w = JSON.parse(localStorage.getItem('sumo-crossy-wallet') || 'null');
+    if (w && typeof w.coins === 'number' && Array.isArray(w.own)) wallet = { coins: Math.max(0, Math.floor(w.coins)), own: w.own.filter(i => Number.isInteger(i) && i >= 0 && i < 8), sel: Number.isInteger(w.sel) ? w.sel : -1 };
+  } catch {}
+  if (wallet.sel >= 0 && !wallet.own.includes(wallet.sel)) wallet.sel = -1;
+  const saveWallet = () => { try { localStorage.setItem('sumo-crossy-wallet', JSON.stringify(wallet)); } catch {} };
 
   // 斜め俯瞰の投影（本家のように、レーンが右下がりに傾いて見える）
   const T = 50;
@@ -117,7 +135,7 @@
   const sprites = [];
   function buildSprites() {
     const size = Math.ceil(1024 * SCALE * DPR);
-    RANKS.forEach(rk => {
+    [...RANKS, ...SKINS].forEach(rk => {
       const bodyT = tint(IMG.body_color, rk.body);
       const beltT = tint(IMG.mawashi, rk.belt);
       const faces = {};
@@ -137,7 +155,7 @@
 
   // 足元(fx, fy)に立たせて描く。sx,sy は潰れ・伸び
   function drawSumo(g, lv, face, fx, fy, sx = 1, sy = 1) {
-    const cv = sprites[lv][face];
+    const cv = sprites[wallet.sel >= 0 ? RANKS.length + wallet.sel : lv][face];
     const w = cv.width / DPR;
     g.save();
     g.translate(fx, fy - PLAYER_R * 0.92 * sy);
@@ -329,6 +347,7 @@
     const p = playerPos();
     deadPos = { x: p.x, r: p.r, h: p.h };
     state = 'over'; deadT = 0; deadKind = kind; hop = null; queued = null;
+    wallet.coins += coinsGot; saveWallet();   // 拾ったコインを ためる
     if (kind === 'car') { sfx.hit(); shakeT = 0.3; }
     else if (kind === 'water') { sfx.splash(); spawnSplash(); }
     else sfx.eagle();
@@ -391,7 +410,7 @@
     }
 
     if (state === 'over') { deadT += dt; return; }
-    if (state === 'ready') return;
+    if (state === 'ready' || state === 'skins') return;
 
     idleT += dt;
     if (idleT > IDLE_EAGLE) return die('eagle');
@@ -500,6 +519,7 @@
     }
   }
 
+  const ltext = (g, s, x, y, size, color = '#fff') => text(g, s, x, y, size, color, '#2a1a05');   // 暗い背景の上の、明るい文字
   function text(g, s, x, yy, size, color = '#3a2a10', stroke = '#fff8dc', align = 'center') {
     g.font = `bold ${size}px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif`;
     g.textAlign = align; g.textBaseline = 'middle';
@@ -729,6 +749,26 @@
   }
 
   // ================= HUD =================
+  // 色えらびの画面（4列 × 3行。1つ目は「番付どおり」）
+  const SK = { x0: 20, y0: 130, w: 86, h: 118, gap: 12, back: { x: 120, y: 620, w: 180, h: 40 } };
+  const skCell = i => ({ x: SK.x0 + (i % 4) * (SK.w + SK.gap), y: SK.y0 + Math.floor(i / 4) * (SK.h + SK.gap) });
+  function drawSkins(g) {
+    g.fillStyle = 'rgba(40,28,10,.94)'; g.fillRect(0, 0, W, H);
+    ltext(g, '色えらび', W / 2, 60, 32, '#fff3b0');
+    ltext(g, 'ためたコイン ' + wallet.coins, W / 2, 100, 18, '#ffd43b');
+    for (let i = -1; i < SKINS.length; i++) {
+      const c = skCell(i + 1), own = i < 0 || wallet.own.includes(i), sel = wallet.sel === i;
+      g.fillStyle = sel ? 'rgba(255,214,74,.28)' : 'rgba(255,255,255,.08)'; g.fillRect(c.x, c.y, SK.w, SK.h);
+      g.strokeStyle = sel ? '#ffd43b' : own ? '#aa9' : '#665544'; g.lineWidth = sel ? 3 : 2; g.strokeRect(c.x, c.y, SK.w, SK.h);
+      const prev = sprites[i < 0 ? 0 : RANKS.length + i].normal, sz = 74;
+      g.globalAlpha = own ? 1 : 0.55; g.drawImage(prev, c.x + (SK.w - sz) / 2, c.y + 6, sz, sz); g.globalAlpha = 1;
+      ltext(g, i < 0 ? '番付どおり' : SKINS[i].name, c.x + SK.w / 2, c.y + 92, 12, '#fff');
+      ltext(g, sel ? 'えらび中' : own ? 'もっている' : String(SKINS[i].price), c.x + SK.w / 2, c.y + 108, 12, sel ? '#9dffb0' : own ? '#ccc' : wallet.coins >= SKINS[i].price ? '#ffd43b' : '#998877');
+    }
+    const b = SK.back; g.fillStyle = '#334'; g.fillRect(b.x, b.y, b.w, b.h); g.strokeStyle = '#99a'; g.lineWidth = 2; g.strokeRect(b.x, b.y, b.w, b.h);
+    ltext(g, 'もどる', b.x + b.w / 2, b.y + b.h / 2, 18, '#fff');
+  }
+
   function drawHud(g, lv) {
     g.fillStyle = 'rgba(255,248,220,.96)'; g.fillRect(0, 0, W, HUD_H);
     g.strokeStyle = '#3a2a10'; g.lineWidth = 3;
@@ -796,7 +836,11 @@
     drawHud(g, lv);
     if (winT > 0) text(g, '出世！ ' + RANKS[lv].name, W / 2, 110, 30, '#b71c1c');
 
+    if (state === 'skins') drawSkins(g);
     if (state === 'ready') {
+      g.fillStyle = '#7a4a10'; g.fillRect(W / 2 - 70, 590, 140, 36); g.strokeStyle = '#ffd43b'; g.lineWidth = 2; g.strokeRect(W / 2 - 70, 590, 140, 36);
+      ltext(g, '色えらび', W / 2, 608, 18, '#fff3b0');
+      text(g, 'ためたコイン ' + wallet.coins, W / 2, 646, 14, '#3a2a10', 'rgba(0,0,0,0)');
       text(g, 'はなりきしクロッシー', W / 2, 190, 30);
       text(g, 'タップで 前へ', W / 2, 250, 22);
       text(g, 'スワイプで 左・右・後ろ', W / 2, 282, 18);
@@ -812,7 +856,12 @@
       text(g, why, W / 2, 360, 34);
       text(g, `${score} 歩  ${RANKS[lv].name}`, W / 2, 415, 28);
       text(g, `ベスト ${best}`, W / 2, 455, 20);
-      if (deadT > 0.7) text(g, 'タップで もういちど', W / 2, 520, 22, '#1f5c00');
+      if (deadT > 0.7) {
+        text(g, 'タップで もういちど', W / 2, 520, 22, '#1f5c00');
+        ltext(g, `コイン +${coinsGot}（ためたコイン ${wallet.coins}）`, W / 2, 490, 15, '#fff3b0');
+        g.fillStyle = '#7a4a10'; g.fillRect(W / 2 - 70, 570, 140, 36); g.strokeStyle = '#ffd43b'; g.lineWidth = 2; g.strokeRect(W / 2 - 70, 570, 140, 36);
+        ltext(g, '色えらび', W / 2, 588, 18, '#fff3b0');
+      }
       g.globalAlpha = 1;
     }
   }
@@ -838,6 +887,21 @@
     if (!down) return;
     const dx = e.clientX - down.x, dy = e.clientY - down.y, c = down.c;
     down = null;
+    if (state === 'skins') {
+      for (let i = -1; i < SKINS.length; i++) {
+        const k = skCell(i + 1);
+        if (c[0] >= k.x && c[0] <= k.x + SK.w && c[1] >= k.y && c[1] <= k.y + SK.h) {
+          if (i < 0 || wallet.own.includes(i)) wallet.sel = i;
+          else if (wallet.coins >= SKINS[i].price) { wallet.coins -= SKINS[i].price; wallet.own.push(i); wallet.sel = i; sfx.coin(); }
+          saveWallet();
+        }
+      }
+      const b = SK.back;
+      if (c[0] >= b.x && c[0] <= b.x + b.w && c[1] >= b.y && c[1] <= b.y + b.h) reset();
+      return;
+    }
+    if (state === 'ready' && c[0] > W / 2 - 70 && c[0] < W / 2 + 70 && c[1] > 590 && c[1] < 626) { state = 'skins'; return; }
+    if (state === 'over' && deadT > 0.7 && c[0] > W / 2 - 70 && c[0] < W / 2 + 70 && c[1] > 570 && c[1] < 606) { reset(); state = 'skins'; return; }
     if (c[0] > W - 48 && c[1] > HUD_H && c[1] < HUD_H + 44) {   // 音のON/OFF
       muted = !muted;
       try { localStorage.setItem('sumo-crossy-mute', muted ? '1' : '0'); } catch {}
@@ -852,6 +916,7 @@
                 ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] }[e.code];
     if (!k) return;
     e.preventDefault();
+    if (state === 'skins') return;
     ac();
     if (!e.repeat) tryMove(k[0], k[1]);
   });
