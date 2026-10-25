@@ -170,7 +170,7 @@ const BoutScene = {
     this.aimCurrent = null;
     this.pVel = { x: 0, y: 0 };
     this.oVel = { x: 0, y: 0 };
-    this.oKnock = 0;
+    this.oKnock = 0; this.pKnock = 0;
     // 相手AI初期化
     this.oPhase = 'ready';
     this.oStagger = 0;
@@ -443,7 +443,7 @@ const BoutScene = {
 
     this.oPos.x += this.oVel.x; this.oPos.y += this.oVel.y;
     const oFric = this.oPhase === 'charging' || this.oKnock > 0 ? 0.94 : 0.87;
-    if (this.oKnock > 0) this.oKnock--;
+    if (this.oKnock > 0 && Math.hypot(this.oVel.x, this.oVel.y) < 0.35) this.oKnock = 0;   // 飛ばされている間は、自分と同じ摩擦（止まったら もとにもどる）
     this.oVel.x *= oFric; this.oVel.y *= oFric;
 
     // 相手の場外（余裕を持たせて判定）
@@ -458,7 +458,8 @@ const BoutScene = {
       // 自分の勢いで出そうなとき（当たられていない）は、早めから強く踏みとどまる
       const self  = performance.now() - this.lastHitAt > BOUT_SELF_BRAKE_MS;
       const start = self ? 0.68 : 0.75;
-      if (pDCur > dR * start) {
+      if (this.pKnock > 0) this.pKnock--;
+      if (pDCur > dR * start && !(this.pKnock > 0)) {   // 飛ばされている間は、相手と同じく 踏ん張りを止める
         const nx = pDx / pDCur, ny = pDy / pDCur;
         const vOut = this.pVel.x * nx + this.pVel.y * ny;
         if (vOut > 0) {
@@ -494,12 +495,17 @@ const BoutScene = {
         this.recordHit(nx, ny, hitPow);
         // 吹き飛び：自分も相手も 同じ計算（力・技・重さは関係なし）。ぶつかった勢いに比例して、お互い同じだけ後ろへ飛ぶ。
         // ゆっくり当たっても、最低でも土俵の幅の一定割合の速さで飛ぶ
+        // お互い、相手へ向かう勢いは消してから（突進の勢いが残って、片方だけ押し込まないように）、同じだけ飛ばす
+        const po = this.pVel.x * nx + this.pVel.y * ny;   // 自分が相手へ向かうと負
+        if (po < 0) { this.pVel.x -= nx * po; this.pVel.y -= ny * po; }
+        const oo = this.oVel.x * nx + this.oVel.y * ny;   // 相手が自分へ向かうと正
+        if (oo > 0) { this.oVel.x -= nx * oo; this.oVel.y -= ny * oo; }
         const kick = Math.min(s * BOUT_KNOCK_MAXV, Math.max(-vRel * BOUT_KNOCK_RATIO, Math.min(s * BOUT_KNOCK_MINV, -vRel * 8)));   // 強く当たっても、飛ぶ速さには上限がある
         this.pVel.x += nx * kick;
         this.pVel.y += ny * kick;
         this.oVel.x -= nx * kick;
         this.oVel.y -= ny * kick;
-        this.oKnock = BOUT_OPP_KNOCK_FRAMES;
+        this.oKnock = 1; this.pKnock = BOUT_OPP_KNOCK_FRAMES;
 
         // 相手が突進してきた衝突もプレイヤーを flying 状態にして跳ね返す
         if (this.phase === 'idle') {
