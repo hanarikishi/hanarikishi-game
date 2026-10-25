@@ -121,6 +121,7 @@
       #hrBtn { position: fixed; z-index: 5; cursor: pointer; font: bold 14px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
         right: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px); bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 50px);
         padding: 6px 14px; border-radius: 999px; border: 2px solid #3a2a10; background: #ffd24a; color: #3a2a10; }
+      #hrBtn.low { bottom: calc(50dvh - min(100dvh, 100vw * 700 / 420) / 2 + 10px); }   /* シェアのボタンが出ていないとき（タイトルなど）は、ゲーム一覧のボタンと同じ高さ */
       #hrBtn[hidden] { display: none; }
       #hrModal { position: fixed; inset: 0; z-index: 50; background: rgba(20,14,6,.72); display: flex; align-items: center; justify-content: center; font-family: "Hiragino Sans","Yu Gothic","Meiryo",sans-serif; }
       #hrModal .box { width: min(92vw, 400px); max-height: 86dvh; display: flex; flex-direction: column; background: #fff8dc; color: #3a2a10; border: 3px solid #3a2a10; border-radius: 16px; overflow: hidden; }
@@ -189,6 +190,7 @@
       btn.addEventListener('click', e => { e.stopPropagation(); open(); }); document.body.appendChild(btn); }
     if (show && !lastShow && typeof value === 'number' && (G.dir === 'asc' || value > 0)) submit(value);   // 0点は記録しない
     lastShow = !!show;
+    btn.classList.toggle('low', !show);
     const vis = !!show || !!also;
     if (vis !== shown) { shown = vis; btn.hidden = !vis; }
   }
