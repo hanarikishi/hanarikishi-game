@@ -14,7 +14,7 @@
     const bx = st.hoop.board === 'L' ? hp.x - hp.rim - 8 : hp.x + hp.rim + 8;
     return [bx, hp.y - 95, bx, hp.y + 12, 'b'];
   }
-  const ballHome = st => ({ x: st.shooter + 12, y: C.FLOOR - 64 });
+  const ballHome = st => ({ x: st.shooter + 10, y: C.FLOOR - 88 });   // はなりきしの鼻の先に乗る位置
 
   function hitPoint(b, px, py, rad, bounce, kind, onHit) {
     const dx = b.x - px, dy = b.y - py, d = Math.hypot(dx, dy), min = C.BALL_R + rad;
