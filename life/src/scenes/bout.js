@@ -808,8 +808,6 @@ const BoutScene = {
 
   // 結果の下の「次へ」ボタンが画面に入るように、そこまでスクロールする
   showNextButton() {
-    // 結果が出たら、相手と自分のパネルをたたんで、1画面におさめる（結果の板に、名前・番付・成績がある）。下にスクロールして上が切れるのを防ぐ
-    document.querySelector('.scene-bout')?.classList.add('bout-done');
     requestAnimationFrame(() => { document.getElementById('btn-next')?.scrollIntoView({ block: 'nearest' }); });
   },
 

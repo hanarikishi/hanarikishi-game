@@ -552,7 +552,7 @@ input[type="text"]:focus { border-color: var(--gold); }
 /* ── KEIKO SCENE ────────────────────────────── */
 /* ── BOUT SCENE ─────────────────────────────── */
 /* 取組の画面は、画面いっぱいに引きのばさない（100vh+下の余白で、はみ出して勝手にスクロールできてしまい、上が切れていた） */
-.scene-bout { min-height: 0; padding: 0 0 16px; gap: 0; align-items: center; }
+.scene-bout { min-height: 0; padding: 0 0 8px; gap: 0; align-items: center; }
 
 .bout-header {
   width: 100%;
@@ -591,10 +591,17 @@ input[type="text"]:focus { border-color: var(--gold); }
   animation: fadeIn 0.3s ease;
 }
 .bout-result.hidden { display: none; }
-/* 結果が出たあと: パネルをたたんで、土俵・結果・次へのボタンが1画面に入るようにする */
-.scene-bout.bout-done .opp-panel, .scene-bout.bout-done .player-panel { display: none; }
-.scene-bout.bout-done .canvas-wrap { max-width: 300px; }
-.scene-bout.bout-done { padding-bottom: 12px; }
+/* 結果の板と「次の取組へ」は小さめにして、土俵やパネルは そのままで 1画面に入るようにする */
+.scene-bout .bout-result { gap: 4px; padding: 4px 20px 6px; }
+.scene-bout .bout-board { max-width: 320px; padding: 3px 10px; margin-bottom: 0; }
+.scene-bout .bb-head { font-size: 0.62rem; margin-bottom: 0; }
+.scene-bout .bb-row { padding: 0; gap: 6px; }
+.scene-bout .bb-star { font-size: 0.95rem; }
+.scene-bout .bb-who { font-size: 0.8rem; line-height: 1.05; }
+.scene-bout .bb-who small { font-size: 0.52rem; }
+.scene-bout .bb-rec { font-size: 0.75rem; }
+.scene-bout .bb-kimarite { font-size: 0.9rem; padding: 0; }
+.scene-bout .bout-result .btn-primary { font-size: 0.9rem; padding: 8px 28px; letter-spacing: 0.2em; }
 
 .result-verdict {
   font-size: 3rem;
