@@ -1,4 +1,4 @@
-const APP_VERSION = '1.11.5';
+const APP_VERSION = '1.11.6';
 // セーブの形式。稽古・米俵を外した本場所のみモードから 2。これより古いセーブは読み込まない（新しく始める）
 const SAVE_VERSION = 2;
 
@@ -101,6 +101,7 @@ const Game = {
     if (data && data.noFade) {
       container.scrollTop = scrollTop;   // 同じ画面の更新：フェードせず位置もそのまま
     } else {
+      container.scrollTop = 0;   // 前の画面で下にスクロールしていても、新しい画面は いちばん上から（2試合目の上が切れていた）
       container.classList.add('scene-enter');
       requestAnimationFrame(() => requestAnimationFrame(() => container.classList.remove('scene-enter')));
     }
