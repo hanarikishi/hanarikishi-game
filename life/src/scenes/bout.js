@@ -13,8 +13,9 @@ const BOUT_HENSACHI_SD = 0.12;        // 力・技・速さのばらつき（偏
 const BOUT_HENSACHI_SD_WEIGHT = 0.08; // 体重のばらつき
 
 
-const BOUT_OPP_GRIT = 0.7;   // 相手が自分から土俵を出ないよう踏ん張る強さの下限（飛ばされているときは効かない）
-const BOUT_KNOCK_SLOW = 1.6;   // 飛ばされた相手が、この速さより遅くなったら、端ぎわで踏ん張る（ゆっくり出ていかない）
+const BOUT_OPP_GRIT = 0.3;   // 相手が自分から土俵を出ないよう踏ん張る強さの下限（飛ばされているときは効かない）
+const BOUT_KNOCK_SLOW = 0.5;   // 飛ばされた相手が、この速さより遅くなったら、端ぎわで踏ん張る（ゆっくり出ていかない）
+const BOUT_EDGE_PUSH = 2.5;   // 土俵の端ぎわで飛ばされる強さの倍率（中心から90%より外側で最大）。これで 端の近くなら押し出せる
 const BOUT_KNOCK_RATIO = 0.4;   // ぶつかった勢いの何倍の速さで、お互い後ろへ飛ぶか（自分も相手も同じ）
 const BOUT_KNOCK_MAXV = 0.006;  // 飛ぶ速さの上限（土俵の幅に対する割合。強く当たったとき用）
 const BOUT_KNOCK_MINV = 0.003;  // 飛ぶ速さの最低ライン（土俵の幅に対する割合。ゆっくり当たったとき用）
@@ -364,11 +365,11 @@ const BoutScene = {
         this.dodgeRolled = true;
         if (Math.random() < 0.08 + oW * 0.30 + o.banzukeRank * 0.01) {
           let side = Math.random() < 0.5 ? 1 : -1;   // 飛んでくる向きに直角
-          const dodge = s * (0.020 + oW * 0.012);
+          const dodge = s * (0.014 + oW * 0.008);
           // かわした先が土俵の外なら、反対側へ。どちらも外なら かわさない（かわして勝手に出ない）
           const endR = sd => Math.hypot(this.oPos.x + (-this.pVel.y / pSpd) * sd * dodge * 7.7 - cx, this.oPos.y + (this.pVel.x / pSpd) * sd * dodge * 7.7 - cy);
-          if (endR(side) > dR * 0.78) side = -side;
-          if (endR(side) <= dR * 0.78) {
+          if (endR(side) > dR * 0.62) side = -side;
+          if (endR(side) <= dR * 0.62 && Math.hypot(this.oPos.x - cx, this.oPos.y - cy) < dR * 0.62) {
             this.oVel.x += (-this.pVel.y / pSpd) * side * dodge;
             this.oVel.y += ( this.pVel.x / pSpd) * side * dodge;
             this.lastDodgeAt = performance.now();
@@ -509,10 +510,13 @@ const BoutScene = {
         const oo = this.oVel.x * nx + this.oVel.y * ny;   // 相手が自分へ向かうと正
         if (oo > 0) { this.oVel.x -= nx * oo; this.oVel.y -= ny * oo; }
         const kick = Math.min(s * BOUT_KNOCK_MAXV, Math.max(-vRel * BOUT_KNOCK_RATIO, Math.min(s * BOUT_KNOCK_MINV, -vRel * 8)));   // 強く当たっても、飛ぶ速さには上限がある
-        this.pVel.x += nx * kick;
-        this.pVel.y += ny * kick;
-        this.oVel.x -= nx * kick;
-        this.oVel.y -= ny * kick;
+        // 土俵の端に近いほど、押し出されやすい（自分も相手も同じ。真ん中は ふつう、端ぎわは最大 BOUT_EDGE_PUSH 倍）
+        const edgeK = (x, y) => 1 + (BOUT_EDGE_PUSH - 1) * Math.max(0, Math.min(1, (Math.hypot(x - cx, y - cy) / dR - 0.5) / 0.4));
+        const kickP = kick * edgeK(this.pPos.x, this.pPos.y), kickO = kick * edgeK(this.oPos.x, this.oPos.y);
+        this.pVel.x += nx * kickP;
+        this.pVel.y += ny * kickP;
+        this.oVel.x -= nx * kickO;
+        this.oVel.y -= ny * kickO;
         this.oKnock = 1; this.pKnock = BOUT_OPP_KNOCK_FRAMES;
         // 相手が自分から突進してぶつかったあとは、跳ね返りで勝手に土俵を出ないようにする（自滅しない。こちらが当てたときは そのまま飛ぶ）
         if (this.oPhase === 'charging') {

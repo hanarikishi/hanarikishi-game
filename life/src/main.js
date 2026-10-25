@@ -1,4 +1,4 @@
-const APP_VERSION = '1.11.24';
+const APP_VERSION = '1.11.25';
 // セーブの形式。稽古・米俵を外した本場所のみモードから 2。これより古いセーブは読み込まない（新しく始める）
 const SAVE_VERSION = 2;
 
