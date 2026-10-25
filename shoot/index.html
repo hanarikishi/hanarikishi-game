@@ -537,11 +537,17 @@
     drawCeiling(g);
     drawWalls(g);
     drawHoop(g, false);
+    // 手に持っている間は、ボールを先に描いて、はなりきし（鼻）を手前にする。飛んでいる間は、ボールを手前にする
+    const drawBallPart = () => {
+      if (ball) {
+        if (ball.flying) ball.trail.forEach(([x, y], i) => { g.fillStyle = `rgba(255,170,80,${i / ball.trail.length * 0.25})`; g.beginPath(); g.arc(x, y, BALL_R * (0.4 + i / ball.trail.length * 0.5), 0, Math.PI * 2); g.fill(); });
+        drawBall(g, ball.x, ball.y, ball.ang);
+      }
+    };
+    const held = ball && !ball.flying;
+    if (held) drawBallPart();
     drawShooter(g);
-    if (ball) {
-      if (ball.flying) ball.trail.forEach(([x, y], i) => { g.fillStyle = `rgba(255,170,80,${i / ball.trail.length * 0.25})`; g.beginPath(); g.arc(x, y, BALL_R * (0.4 + i / ball.trail.length * 0.5), 0, Math.PI * 2); g.fill(); });
-      drawBall(g, ball.x, ball.y, ball.ang);
-    }
+    if (!held) drawBallPart();
     drawHoop(g, true);
     drawGuide(g);
     for (const p of parts) {
