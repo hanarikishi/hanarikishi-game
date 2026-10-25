@@ -116,6 +116,9 @@
     inazuma: { pas: 'mawashi', name: '神鳴り',     icon: '神', desc: '雷が降りしきる' },
   };
 
+  const EVO_TIME = 45;   // 進化(必殺技)の続く秒数。切れても、また進化できる
+  for (const k in EVO) EVO[k].desc += `（${EVO_TIME}秒だけ）`;
+
   // ---- 敵 ----
   const ENEMY = {
     ghost: { name: 'おばけ',     hp: 6,   spd: 32, dmg: 4,  r: 8,  gem: 1, art: 1.0 },
@@ -456,6 +459,21 @@
   let joy = null, keys = {}, pausedBy = null;
   try { best = JSON.parse(localStorage.getItem('sumo-surv-best') || 'null') || { time: 0, kills: 0 }; } catch { best = { time: 0, kills: 0 }; }
 
+  // ---- 小判の店（小判は ためておける。買った強化は、次からずっと効く）----
+  const SHOP = [
+    { id: 'hp',  name: '体力',     per: '+10%', desc: '最大体力が増える',     max: 5, cost: l => 100 * (l + 1) },
+    { id: 'pow', name: '力',       per: '+6%',  desc: '攻撃の強さが増える',   max: 5, cost: l => 120 * (l + 1) },
+    { id: 'spd', name: '足',       per: '+4%',  desc: '移動が速くなる',       max: 5, cost: l => 80 * (l + 1) },
+    { id: 'mag', name: '拾う範囲', per: '+10%', desc: '経験値や小判を引き寄せる', max: 5, cost: l => 80 * (l + 1) },
+    { id: 'xp',  name: '経験値',   per: '+6%',  desc: '経験値が多くもらえる', max: 5, cost: l => 150 * (l + 1) },
+    { id: 'rev', name: '再起',     per: '1回',  desc: 'やられても、体力半分で もう一度たたかえる', max: 1, cost: () => 800 },
+  ];
+  let wallet = { coins: 0, up: {} };
+  try { const w = JSON.parse(localStorage.getItem('sumo-surv-wallet') || 'null'); if (w && typeof w.coins === 'number' && w.up && typeof w.up === 'object') wallet = w; } catch {}
+  const saveWallet = () => { try { localStorage.setItem('sumo-surv-wallet', JSON.stringify(wallet)); } catch {} };
+  const up = id => Math.max(0, Math.min(SHOP.find(x => x.id === id).max, Math.floor(Number(wallet.up[id]) || 0)));
+  const SHOPUI = { y0: 150, h: 66, gap: 8, back: { x: 120, y: 640, w: 180, h: 40 } };
+
   const xpFor = L => L === 1 ? 2 : L === 2 ? 5 : 4 + (L - 1) * 6;
 
   function reset() {
@@ -467,7 +485,7 @@
     camX = 0; camY = 0;
     addWeapon('hari');
     recalc();
-    P.hp = P.maxHp;
+    P.hp = P.maxHp; P.revive = up('rev');
   }
 
   // ---- ステータス ----
@@ -475,15 +493,15 @@
   const S = { might: 1, area: 1, cd: 1, magnet: 1, regen: 0, armor: 0, speed: 1 };
   function recalc() {
     const oldMax = P.maxHp;
-    P.maxHp = Math.round(100 * (1 + 0.2 * pv('chanko')));
+    P.maxHp = Math.round(100 * (1 + 0.2 * pv('chanko') + 0.1 * up('hp')));
     P.hp += P.maxHp - oldMax;
-    S.might = 1 + 0.1 * pv('keiko');
+    S.might = 1 + 0.1 * pv('keiko') + 0.06 * up('pow');
     S.area = 1 + 0.1 * pv('kesho');
     S.cd = Math.max(0.4, 1 - 0.08 * pv('tachiai'));
-    S.magnet = 1 + 0.4 * pv('maneki');
+    S.magnet = 1 + 0.4 * pv('maneki') + 0.1 * up('mag');
     S.regen = 0.12 + 0.3 * pv('chikara');
     S.armor = pv('mawashi');
-    S.speed = 1 + 0.1 * pv('ashi');
+    S.speed = 1 + 0.1 * pv('ashi') + 0.04 * up('spd');
   }
 
   function addWeapon(id) {
@@ -513,7 +531,7 @@
   const canEvolve = w => w.lv >= WEAPONS[w.id].max && !w.evo && pv(EVO[w.id].pas) >= 1;
   function evolve(id) {
     const w = weapons.find(x => x.id === id);
-    if (w) w.evo = true;
+    if (w) { w.evo = true; w.evoT = EVO_TIME; }
     banner = { text: '進化！ ' + EVO[id].name, t: 2.6, color: '#ff8a3c' };
     sfx.chest();
   }
@@ -554,7 +572,9 @@
     if (m >= 1) t.push(['skel', m < 3 ? 30 : m < 12 ? 38 : 15]);
     if (m >= 4) t.push(['rival', m < 7 ? 8 : m < 14 ? 28 : 14]);
     if (m >= 6) t.push(['batB', 25]);
+    if (m >= 6) t.push(['oni', m < 12 ? 4 : 7]);
     if (m >= 9) t.push(['ghostD', 22]);
+    if (m >= 13) t.push(['oniB', 6]);
     if (m >= 12) t.push(['tengu', 16]);
     if (m >= 14) t.push(['skelR', 28]);
     if (m >= 17) t.push(['rivalD', 14]);
@@ -632,7 +652,7 @@
     const d = Math.hypot(e.x - sx, e.y - sy) || 1;
     const kmul = e.boss ? 0.15 : e.type === 'rival' ? 0.55 : 1;
     e.kx += (e.x - sx) / d * knock * kmul * 3; e.ky += (e.y - sy) / d * knock * kmul * 3;
-    if (nums.length < 70) nums.push({ x: e.x + rnd(-5, 5), y: e.y - e.r, v: dmg, t: 0.55 });
+    if (nums.length < 24) nums.push({ x: e.x + rnd(-5, 5), y: e.y - e.r, v: dmg, t: 0.55 });
     sfx.hit();
     if (e.hp <= 0) killEnemy(e);
   }
@@ -833,7 +853,7 @@
 
   // ================= 更新 =================
   function addXp(v) {
-    xp += v;
+    xp += v * (1 + 0.06 * up('xp'));
     while (xp >= xpNeed && state === 'play') {
       xp -= xpNeed; level++; xpNeed = xpFor(level);
       openLevelUp();
@@ -861,6 +881,11 @@
 
   function openLevelUp() {
     choices = makeChoices();
+    if (choices.length === 1 && choices[0].kind === 'heal') {   // えらぶものが もう無い → 自動で全回復と小判
+      P.hp = P.maxHp; coins += 50; sfx.heal();
+      banner = { text: '全回復！ 小判 +50', t: 1.4, color: '#ffe27a' };
+      return;
+    }
     state = 'levelup';
     sfx.level();
   }
@@ -878,14 +903,18 @@
   function hurt(dmg) {
     if (P.iframe > 0) return;
     const d = Math.max(1, Math.round(dmg - S.armor));
-    P.hp -= d; P.iframe = 0.75; P.hurtT = 0.2; shake = 0.15;
+    P.hp -= d; P.iframe = 0.75; P.hurtT = 0.2; shake = 0.08;
     sfx.hurt();
-    if (P.hp <= 0) { P.hp = 0; endGame(false); }
+    if (P.hp <= 0) {
+      if (P.revive > 0) { P.revive--; P.hp = Math.round(P.maxHp * 0.5); P.iframe = 2; banner = { text: '再起！ もう一度たたかえ', t: 2, color: '#ffe27a' }; sfx.heal(); return; }
+      P.hp = 0; endGame(false);
+    }
   }
 
   function endGame(win) {
     state = win ? 'win' : 'over';
     over = { t: 0 };
+    wallet.coins += coins; saveWallet();   // この回の小判を ためる
     if (win) sfx.win(); else sfx.over();
     if (gt > best.time || kills > best.kills) {
       best = { time: Math.max(best.time, Math.floor(gt)), kills: Math.max(best.kills, kills) };
@@ -930,6 +959,7 @@
     }
     P.iframe = Math.max(0, P.iframe - dt);
     P.hurtT = Math.max(0, P.hurtT - dt);
+    for (const w of weapons) if (w.evo && (w.evoT -= dt) <= 0) { w.evo = false; banner = { text: EVO[w.id].name + ' が きれた…', t: 1.6, color: '#c8a070' }; }
     if (S.regen) P.hp = Math.min(P.maxHp, P.hp + S.regen * dt);
     camX += (P.x - camX) * Math.min(1, dt * 8); camY += (P.y - camY) * Math.min(1, dt * 8);
 
@@ -1063,7 +1093,7 @@
   function drawEnemy(g, e) {
     const x = sx(e.x), y = sy(e.y);
     if (x < -50 || x > W + 50 || y < -50 || y > H + 50) return;
-    const fl = e.flash > 0;
+    const fl = false;   // 当たったときの白いフラッシュは出さない（目がちかちかするため）
     const faceRight = P.x > e.x;
     if (e.type === 'bat') {
       const fr = Math.floor(performance.now() / 110 + e.id) % 2;
@@ -1243,12 +1273,12 @@
     const rk = rankOf(gt);
     const sp = SUMO[rk];
     const x = sx(P.x), y = sy(P.y);
-    const blink = P.iframe > 0 && Math.floor(performance.now() / 70) % 2 === 0;
+    const blink = P.iframe > 0 && Math.floor(performance.now() / 220) % 2 === 0;
     g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(x, y + 11, 11, 4, 0, 0, Math.PI * 2); g.fill();
     const bob = P.moving ? Math.abs(Math.sin(P.walkT)) * -3 : Math.sin(performance.now() / 400) * 0.6;
     const tilt = P.moving ? Math.sin(P.walkT) * 0.12 : 0;
     g.save();
-    if (blink) g.globalAlpha = 0.45;
+    if (blink) g.globalAlpha = 0.7;
     const img = state === 'over' ? sp.hit : P.hurtT > 0 ? sp.hit : (banner && banner.color === '#ffd24a' && banner.t > 0.5 ? sp.win : sp.normal);
     drawSpr(g, img, x, y + bob, PX, P.face < 0, tilt);
     g.restore();
@@ -1345,11 +1375,27 @@
     g.restore();
   }
 
+  function drawShop(g) {
+    g.fillStyle = 'rgba(10,6,0,.93)'; g.fillRect(0, 0, W, H);
+    text(g, '小判の店', W / 2, 60, 30, '#ffd24a', '#3a1a00');
+    text(g, `たまった小判 ${wallet.coins}`, W / 2, 105, 17, '#fff', '#000');
+    SHOP.forEach((it, i) => {
+      const y = SHOPUI.y0 + i * (SHOPUI.h + SHOPUI.gap), lv = up(it.id), maxed = lv >= it.max, price = it.cost(lv), can = !maxed && wallet.coins >= price;
+      g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(16, y, W - 32, SHOPUI.h);
+      g.strokeStyle = can ? '#ffd24a' : '#665544'; g.lineWidth = 2; g.strokeRect(16, y, W - 32, SHOPUI.h);
+      text(g, `${it.name}  ${it.max > 1 ? 'Lv.' + lv + '/' + it.max : (lv ? '購入ずみ' : '')}`, 28, y + 20, 16, '#fff', '#000', 'left');
+      text(g, it.max > 1 ? `${it.desc}（1段階ごとに ${it.per}）` : it.desc, 28, y + 44, 11, '#cfd6ff', '#000', 'left', false);
+      text(g, maxed ? 'MAX' : String(price), W - 28, y + SHOPUI.h / 2, 18, maxed ? '#9dffb0' : can ? '#ffd24a' : '#887766', '#000', 'right');
+    });
+    const b = SHOPUI.back; g.fillStyle = '#334'; g.fillRect(b.x, b.y, b.w, b.h); g.strokeStyle = '#99a'; g.strokeRect(b.x, b.y, b.w, b.h);
+    text(g, 'もどる', b.x + b.w / 2, b.y + b.h / 2, 18, '#fff', '#000');
+  }
+
   function draw() {
     const g = ctx;
     g.imageSmoothingEnabled = false;
     g.save();
-    if (shake > 0) g.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+    if (shake > 0) g.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
     drawWorld(g);
     g.restore();
     // 暗がり（本家のように少し暗く）
@@ -1373,6 +1419,12 @@
       text(g, `ベスト ${fmt(best.time)}  撃破 ${best.kills}`, W / 2, 520, 14, '#ffe27a', '#000');
       text(g, 'タップで はじめる', W / 2, 580, 22, '#9dffb0', '#000');
     }
+    if (state === 'title') {
+      g.fillStyle = '#7a4a10'; g.fillRect(W / 2 - 80, 600, 160, 38); g.strokeStyle = '#ffd24a'; g.lineWidth = 2; g.strokeRect(W / 2 - 80, 600, 160, 38);
+      text(g, '小判の店', W / 2, 619, 18, '#ffe27a', '#000');
+      text(g, `たまった小判 ${wallet.coins}`, W / 2, 660, 13, '#ffd24a', '#000');
+    }
+    if (state === 'shop') drawShop(g);
     if (state === 'levelup') drawLevelUp(g);
     if (state === 'pause') {
       g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(0, 0, W, H);
@@ -1387,8 +1439,12 @@
       text(g, state === 'win' ? '横綱昇進！' : '引退…', W / 2, 335, 40, state === 'win' ? '#ffd24a' : '#ff8a7a', '#000');
       text(g, `生き残り ${fmt(gt)}`, W / 2, 385, 22, '#fff', '#000');
       text(g, `撃破 ${kills}   LV ${level}  ${RANKS[rankOf(gt)].name}`, W / 2, 420, 16, '#fff', '#000');
-      text(g, `ベスト ${fmt(best.time)}   小判 ${coins}`, W / 2, 452, 14, '#ffe27a', '#000');
-      if (over.t > 0.8) text(g, 'タップで もういちど', W / 2, 520, 22, '#9dffb0', '#000');
+      text(g, `ベスト ${fmt(best.time)}   小判 +${coins}（ためた小判 ${wallet.coins}）`, W / 2, 452, 14, '#ffe27a', '#000');
+      if (over.t > 0.8) {
+        text(g, 'タップで もういちど', W / 2, 515, 22, '#9dffb0', '#000');
+        g.fillStyle = '#7a4a10'; g.fillRect(W / 2 - 80, 570, 160, 38); g.strokeStyle = '#ffd24a'; g.lineWidth = 2; g.strokeRect(W / 2 - 80, 570, 160, 38);
+        text(g, '小判の店', W / 2, 589, 18, '#ffe27a', '#000');
+      }
       g.globalAlpha = 1;
     }
   }
@@ -1400,8 +1456,28 @@
   cv.addEventListener('pointerdown', e => {
     e.preventDefault(); ac();
     const [x, y] = toCanvas(e);
-    if (state === 'title') { startGame(); return; }
-    if (state === 'over' || state === 'win') { if (over.t > 0.8) { reset(); state = 'play'; } return; }
+    if (state === 'title') {
+      if (x > W / 2 - 80 && x < W / 2 + 80 && y > 600 && y < 638) { state = 'shop'; return; }
+      startGame(); return;
+    }
+    if (state === 'shop') {
+      SHOP.forEach((it, i) => {
+        const yy = SHOPUI.y0 + i * (SHOPUI.h + SHOPUI.gap), lv = up(it.id);
+        if (y >= yy && y <= yy + SHOPUI.h && lv < it.max && wallet.coins >= it.cost(lv)) {
+          wallet.coins -= it.cost(lv); wallet.up[it.id] = lv + 1; saveWallet(); sfx.coin();
+        }
+      });
+      const b = SHOPUI.back;
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { reset(); state = 'title'; }   // 買った強化を反映してもどる
+      return;
+    }
+    if (state === 'over' || state === 'win') {
+      if (over.t > 0.8) {
+        if (x > W / 2 - 80 && x < W / 2 + 80 && y > 570 && y < 608) { reset(); state = 'shop'; return; }
+        reset(); state = 'play';
+      }
+      return;
+    }
     if (state === 'pause') { state = 'play'; return; }
     if (state === 'levelup') {
       choices.forEach((c, i) => {
