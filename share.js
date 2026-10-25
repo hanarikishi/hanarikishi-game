@@ -15,7 +15,7 @@
     s.textContent = `
       #shareX {
         position: fixed; z-index: 5; cursor: pointer; font: bold 12px "Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
-        right: calc(50vw - min(100dvh * 420 / 700, 100vw) / 2 + 10px);
+        left: 50vw; transform: translateX(-50%);
         bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
         padding: 6px 10px; border-radius: 999px; border: 2px solid #3a2a10; background: #111; white-space: nowrap; color: #fff;
       }
