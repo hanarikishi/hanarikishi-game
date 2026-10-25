@@ -1,5 +1,5 @@
 // オフラインでも遊べるようにキャッシュする。更新したら VERSION を上げる。
-const VERSION = 'life-v1';
+const VERSION = 'life-v2';
 const PREFIX = VERSION.replace(/v\d+$/, '');   // 自分のキャッシュの名前の頭（ほかのゲームのキャッシュは消さない）
 const FILES = ['./', './index.html', './manifest.webmanifest', '../parts/icon-192.png', '../parts/icon-512.png'];   // 絵や音は、遊んだぶんだけ自動でキャッシュされる
 self.addEventListener('install', e => {
@@ -13,7 +13,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   // ネット優先: 常に最新を取りに行き、成功したらキャッシュを更新。オフライン時だけキャッシュを使う
   e.respondWith(
-    fetch(e.request).then(res => {
+    fetch(e.request, { cache: 'no-cache' }).then(res => {   // ブラウザの10分キャッシュを使わず、毎回サーバーに「変わったか」を聞く（更新がすぐ届く）
       if (res.ok && new URL(e.request.url).origin === location.origin) {   // 失敗した応答や、よそのサイトの通信は とっておかない
         const copy = res.clone();
         caches.open(VERSION).then(c => c.put(e.request, copy));
