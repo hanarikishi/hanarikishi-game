@@ -458,7 +458,7 @@
   let state, gt, P, weapons, passives, enemies, gems, items, props, projs, fx, nums, swings, bolts, kills, coins, best;
   let lastVac = 0;
   let lastRank = 0, nextEvent = 60, evN = 0;
-  let level, xp, xpNeed, spawnT, nextBoss, propT, choices, banner, camX, camY, shake, nid, killStreak, gemStreak, lastGem, title;
+  let level, xp, xpNeed, spawnT, nextBoss, nextKuro, propT, choices, banner, camX, camY, shake, nid, killStreak, gemStreak, lastGem, title;
   let joy = null, keys = {}, pausedBy = null;
   try { best = JSON.parse(localStorage.getItem('sumo-surv-best') || 'null') || { time: 0, kills: 0 }; } catch { best = { time: 0, kills: 0 }; }
 
@@ -482,7 +482,7 @@
     P = { x: 0, y: 0, hp: 100, maxHp: 100, iframe: 0, face: 1, moving: false, walkT: 0, hurtT: 0, speed: 100 };
     weapons = []; passives = {};
     enemies = []; gems = []; items = []; props = []; projs = []; fx = []; nums = []; swings = []; bolts = [];
-    spawnT = 0.5; nextEvent = 60; evN = 0; lastRank = 0; nextBoss = 150; propT = 8; choices = []; banner = null; shake = 0; nid = 1; killStreak = 0; gemStreak = 0; lastGem = 0;
+    spawnT = 0.5; nextEvent = 60; evN = 0; lastRank = 0; nextBoss = 150; nextKuro = WIN_TIME - 180; propT = 8; choices = []; banner = null; shake = 0; nid = 1; killStreak = 0; gemStreak = 0; lastGem = 0;
     camX = 0; camY = 0;
     addWeapon('hari');
     recalc();
@@ -636,6 +636,11 @@
       const bt = gt < 540 ? 'oni' : gt < 1020 ? 'oniB' : gt < 1500 ? 'oniK' : 'oniD';
       const b = spawnAtEdge(bt, 60);
       if (b) { b.boss = true; banner = { text: ENEMY[bt].name + 'が あらわれた！', t: 2.2, color: '#ff6a5a' }; }
+    }
+    // さいごの3分: 黒鬼が 18秒ごとに1体、あわせて10体 出てくる
+    if (gt >= nextKuro && gt < WIN_TIME - 3) {
+      nextKuro += 18;
+      if (spawnAtEdge('oniD', 60) && nextKuro < WIN_TIME - 160) banner = { text: '黒鬼が つぎつぎ あらわれる！', t: 2.4, color: '#ff6a5a' };
     }
     // かがり火（こわせば回復・小判）
     propT -= dt;
